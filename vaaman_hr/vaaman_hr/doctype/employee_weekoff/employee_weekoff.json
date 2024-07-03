@@ -14,7 +14,7 @@
   "holiday_list",
   "column_break_hikh",
   "company",
-  "payroll_cost_center"
+  "branch"
  ],
  "fields": [
   {
@@ -54,16 +54,16 @@
    "options": "Company"
   },
   {
-   "fetch_from": "employee.payroll_cost_center",
-   "fieldname": "payroll_cost_center",
+   "fetch_from": "employee.branch",
+   "fieldname": "branch",
    "fieldtype": "Link",
-   "label": "Payroll Cost Center",
-   "options": "Cost Center"
+   "label": "Branch",
+   "options": "Branch"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2024-06-19 10:00:01.953143",
+ "modified": "2024-06-28 15:49:00.978714",
  "modified_by": "Administrator",
  "module": "Vaaman Hr",
  "name": "Employee Weekoff",
@@ -84,7 +84,7 @@
    "write": 1
   }
  ],
- "search_fields": "employee,payroll_cost_center",
+ "search_fields": "employee,branch",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []
