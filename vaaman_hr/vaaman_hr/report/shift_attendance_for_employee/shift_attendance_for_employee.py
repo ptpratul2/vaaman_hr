@@ -90,7 +90,7 @@ def get_columns():
 	
 		{
 			"label": _("Branch"),
-			"fieldname": "branch",
+			"fieldname": "custome_branch",
 			"fieldtype": "Link",
 			"options": "Branch",
 			"width": 150,
@@ -181,11 +181,8 @@ def get_chart_data(data):
 def get_query(filters):
 	attendance = frappe.qb.DocType("Attendance")	
 	shift_type = frappe.qb.DocType("Shift Type")
-
 	query = (
 		frappe.qb.from_(attendance)
-		# .inner_join(checkin)
-		# .on(checkin.attendance == attendance.name)
 		.inner_join(shift_type)
 		.on(attendance.shift == shift_type.name)
 		.select(
@@ -202,8 +199,7 @@ def get_query(filters):
 			attendance.working_hours,
 			attendance.custom_over_time,			
 			attendance.custom_branch,			
-			attendance.company,
-						
+			attendance.company,						
 		)
 		.where(attendance.docstatus == 1)
 		.groupby(attendance.name)
