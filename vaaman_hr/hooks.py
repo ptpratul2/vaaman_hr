@@ -117,8 +117,10 @@ app_license = "mit"
 # override_doctype_class = {
 # 	"ToDo": "custom_app.overrides.CustomToDo"
 # }
+
 override_doctype_class = { 
-        "Attendance": "vaaman_hr.vaaman_hr.api.vaaman_hr"    
+        "Attendance": "vaaman_hr.vaaman_hr.api.vaaman_hr" ,
+        "Compensatory Leave Request": "vaaman_hr.vaaman_hr.compoff.CompOff"   
 }
 # Document Events
 # ---------------
