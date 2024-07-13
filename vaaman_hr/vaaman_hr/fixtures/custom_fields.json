@@ -1,0 +1,46 @@
+[
+    {
+        "doctype": "Custom Field",
+        "dt": "Attendance",
+        "fieldname": "custom_holiday_list",
+        "fieldtype": "Link",
+        "label": "Holiday List",
+        "options": "Holiday List",
+        "insert_after": "custom_branch"
+    },
+    {
+        "doctype": "Custom Field",
+        "dt": "Attendance",
+        "fieldname": "custom_branch",
+        "fieldtype": "Link",
+        "label": "Branch",
+        "options": "Branch",
+        "insert_after": "company"
+    },
+    {
+        "doctype": "Custom Field",
+        "dt": "Attendance",
+        "fieldname": "custom_attendance_type",
+        "fieldtype": "Select",
+        "label": "Attendance Type",
+        "options": "Outdoor duty\nTraining Days\nMedical Gatepass\nHoliday\nPresent on Weekly off\nPresent on Weekly off Holiday\nOT Days",
+        "insert_after": "attendance"
+    },
+    {
+        "doctype": "Custom Field",
+        "dt": "Attendance",
+        "fieldname": "custom_over_time",
+        "fieldtype": "Float",
+        "label": "Over Time",
+        "insert_after": "working_hours"
+    },
+    {
+        "doctype": "Custom Field",
+        "dt": "Leave Type",
+        "fieldname": "earned_leave_frequency",
+        "fieldtype": "Select",
+        "label": "Earned Leave Frequency",
+        "options": "Monthly\nQuarterly\nHalf-Yearly\nYearly\n20 Days"
+        
+    }
+]
