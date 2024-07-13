@@ -69,6 +69,8 @@ app_license = "mit"
 
 # before_install = "vaaman_hr.install.before_install"
 # after_install = "vaaman_hr.install.after_install"
+before_app_install = "vaaman_hr.vaaman_hr.patches.apply_monkey_patch"
+after_migrate = "vaaman_hr.vaaman_hr.update_field_options.update_earned_leave_frequency_options"
 
 # Uninstallation
 # ------------
