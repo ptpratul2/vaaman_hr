@@ -1,18 +1,10 @@
 [   
-    {  
-    "doctype": "Custom Field",
-    "dt": "Employee",
-    "module": "My App",
-    "name": "Employee-age",
-    "fieldname": "age",
-    "fieldtype": "Int",
-    "label": "Age",
-    "insert_after": "status"
-    },
+ 
     {
         "doctype": "Custom Field",
         "dt": "Attendance",
         "module": "Vaaman Hr",
+        "name": "Attendance-holiday-list",
         "fieldname": "custom_holiday_list",
         "fieldtype": "Link",
         "label": "Holiday List",
@@ -22,6 +14,8 @@
     {
         "doctype": "Custom Field",
         "dt": "Attendance",
+        "module": "Vaaman Hr",
+        "name": "Attendance-branch",
         "fieldname": "custom_branch",
         "fieldtype": "Link",
         "label": "Branch",
@@ -31,6 +25,8 @@
     {
         "doctype": "Custom Field",
         "dt": "Attendance",
+        "module": "Vaaman Hr",
+        "name": "Attendance-attendance-type",
         "fieldname": "custom_attendance_type",
         "fieldtype": "Select",
         "label": "Attendance Type",
@@ -40,6 +36,8 @@
     {
         "doctype": "Custom Field",
         "dt": "Attendance",
+        "module": "Vaaman Hr",
+        "name": "Attendance-over-time",
         "fieldname": "custom_over_time",
         "fieldtype": "Float",
         "label": "Over Time",
@@ -48,10 +46,13 @@
     {
         "doctype": "Custom Field",
         "dt": "Leave Type",
+        "module": "Vaaman Hr",
+        "name": "Leave Type-earned_leave_frequency",
         "fieldname": "earned_leave_frequency",
         "fieldtype": "Select",
         "label": "Earned Leave Frequency",
         "options": "Monthly\nQuarterly\nHalf-Yearly\nYearly\n20 Days"
         
     }
+    
 ]
