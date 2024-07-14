@@ -70,8 +70,8 @@ app_license = "mit"
 # before_install = "vaaman_hr.install.before_install"
 # after_install = "vaaman_hr.install.after_install"
 before_app_install = "vaaman_hr.vaaman_hr.patches.apply_monkey_patch"
-after_migrate = ["vaaman_hr.vaaman_hr.update_field_options.update_earned_leave_frequency_options",
-              "vaaman_hr.vaaman_hr.update_field_options.update_attendance_status_options"]
+# after_migrate = ["vaaman_hr.vaaman_hr.update_field_options.update_earned_leave_frequency_options",
+#               "vaaman_hr.vaaman_hr.update_field_options.update_attendance_status_options"]
 
 
 
@@ -236,7 +236,8 @@ override_doctype_class = {
 # }
 
 #custom_field_add
-print("Loading fixtures...")
 fixtures = [
-    "Custom Field"
+    {"dt":"Custom Field","filter":[["module","=","Vaaman Hr"]]},
+    # {"dt":"Property Setter","filter":[["module","=","Vaaman Hr"]]}
+    
 ]

@@ -1,5 +1,4 @@
-[   
- 
+[
     {
         "doctype": "Custom Field",
         "dt": "Attendance",
@@ -9,7 +8,8 @@
         "fieldtype": "Link",
         "label": "Holiday List",
         "options": "Holiday List",
-        "insert_after": "custom_branch"
+        "insert_after": "custom_branch",
+        "__islocal": 1
     },
     {
         "doctype": "Custom Field",
@@ -20,7 +20,8 @@
         "fieldtype": "Link",
         "label": "Branch",
         "options": "Branch",
-        "insert_after": "company"
+        "insert_after": "company",
+        "__islocal": 1
     },
     {
         "doctype": "Custom Field",
@@ -31,7 +32,8 @@
         "fieldtype": "Select",
         "label": "Attendance Type",
         "options": "Outdoor duty\nTraining Days\nMedical Gatepass\nHoliday\nPresent on Weekly off\nPresent on Weekly off Holiday\nOT Days",
-        "insert_after": "attendance"
+        "insert_after": "attendance",
+        "__islocal": 1
     },
     {
         "doctype": "Custom Field",
@@ -41,18 +43,29 @@
         "fieldname": "custom_over_time",
         "fieldtype": "Float",
         "label": "Over Time",
-        "insert_after": "working_hours"
+        "insert_after": "working_hours",
+        "__islocal": 1
     },
     {
-        "doctype": "Custom Field",
-        "dt": "Leave Type",
-        "module": "Vaaman Hr",
-        "name": "Leave Type-earned_leave_frequency",
-        "fieldname": "earned_leave_frequency",
-        "fieldtype": "Select",
-        "label": "Earned Leave Frequency",
-        "options": "Monthly\nQuarterly\nHalf-Yearly\nYearly\n20 Days"
-        
+        "doctype": "Property Setter",
+        "doctype_or_field": "DocField",
+        "doc_type": "Leave Type",
+        "field_name": "earned_leave_frequency",
+        "property": "options",
+        "value": "Monthly\nQuarterly\nHalf-Yearly\nYearly\n20 Days",
+        "property_type": "Select",
+        "__islocal": 1,
+        "name": "Leave Type-earned_leave_frequency-options"
+    },
+    {
+        "doctype": "Property Setter",
+        "doctype_or_field": "DocField",
+        "doc_type": "Attendance",
+        "field_name": "status",
+        "property": "options",
+        "value": "Present\nAbsent\nOn Leave\nHalf Day\nWork From Home\nWeekly Off",
+        "property_type": "Select",
+        "__islocal": 1,
+        "name": "Attendance-status-options"
     }
-    
 ]
