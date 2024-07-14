@@ -1,7 +1,18 @@
-[
+[   
+    {  
+    "doctype": "Custom Field",
+    "dt": "Employee",
+    "module": "My App",
+    "name": "Employee-age",
+    "fieldname": "age",
+    "fieldtype": "Int",
+    "label": "Age",
+    "insert_after": "status"
+    },
     {
         "doctype": "Custom Field",
         "dt": "Attendance",
+        "module": "Vaaman Hr",
         "fieldname": "custom_holiday_list",
         "fieldtype": "Link",
         "label": "Holiday List",

@@ -236,4 +236,7 @@ override_doctype_class = {
 # }
 
 #custom_field_add
-fixtures = ["custom_fields.json"]
+print("Loading fixtures...")
+fixtures = [
+    "Custom Field"
+]
