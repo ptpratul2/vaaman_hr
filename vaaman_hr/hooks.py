@@ -1,3 +1,8 @@
+# in hooks.py
+from .vaaman_hr.patches import apply_monkey_patch
+
+
+
 app_name = "vaaman_hr"
 app_title = "Vaaman Hr"
 app_publisher = "Pratul Tripathi"
@@ -241,3 +246,5 @@ fixtures = [
     # {"dt":"Property Setter","filter":[["module","=","Vaaman Hr"]]}
     
 ]
+# Ensure the function is called during startup
+apply_monkey_patch()

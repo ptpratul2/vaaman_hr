@@ -52,7 +52,7 @@
         "doc_type": "Leave Type",
         "field_name": "earned_leave_frequency",
         "property": "options",
-        "value": "Monthly\nQuarterly\nHalf-Yearly\nYearly\n20 Days",
+        "value": "Monthly\nQuarterly\nHalf-Yearly\nYearly\n20_Days",
         "property_type": "Select",
         "__islocal": 1,
         "name": "Leave Type-earned_leave_frequency-options"

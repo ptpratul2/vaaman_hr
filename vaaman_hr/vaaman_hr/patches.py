@@ -1,6 +1,6 @@
 import frappe
 from frappe.utils import flt, getdate, get_last_day, get_first_day
-from hrms.hr.utils import calculate_pro_rated_leaves , round_earned_leaves
+from hrms.hr.utils import calculate_pro_rated_leaves, round_earned_leaves
 
 def custom_get_monthly_earned_leave(
     date_of_joining,
@@ -12,7 +12,7 @@ def custom_get_monthly_earned_leave(
     pro_rated=True,
 ):
     earned_leaves = 0.0
-    divide_by_frequency = {"Yearly": 1, "Half-Yearly": 2, "Quarterly": 4, "Monthly": 12, "20 Days" : 18,}
+    divide_by_frequency = {"Yearly": 1, "Half-Yearly": 2, "Quarterly": 4, "Monthly": 12, "20_Days": 18}
     if annual_leaves:
         earned_leaves = flt(annual_leaves) / divide_by_frequency[frequency]
 
@@ -33,3 +33,7 @@ def custom_get_monthly_earned_leave(
 def apply_monkey_patch():
     import hrms.hr.utils
     hrms.hr.utils.get_monthly_earned_leave = custom_get_monthly_earned_leave
+    # print("Monkey patch applied: hrms.hr.utils.get_monthly_earned_leave")
+
+# Ensure the patch is applied at the appropriate point in your application
+apply_monkey_patch()
