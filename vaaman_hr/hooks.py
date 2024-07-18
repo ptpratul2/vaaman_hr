@@ -1,8 +1,5 @@
 # in hooks.py
 from .vaaman_hr.patches import apply_monkey_patch
-
-
-
 app_name = "vaaman_hr"
 app_title = "Vaaman Hr"
 app_publisher = "Pratul Tripathi"
@@ -130,8 +127,9 @@ before_app_install = "vaaman_hr.vaaman_hr.patches.apply_monkey_patch"
 
 override_doctype_class = { 
         "Attendance": "vaaman_hr.vaaman_hr.api.vaaman_hr" ,
-        "Compensatory Leave Request": "vaaman_hr.vaaman_hr.compoff.CompOff"   
-}
+        "Compensatory Leave Request": "vaaman_hr.vaaman_hr.compoff.CompOff"
+        } 
+        
 # Document Events
 # ---------------
 # Hook on document methods and events
@@ -143,6 +141,13 @@ override_doctype_class = {
 # 		"on_trash": "method"
 # 	}
 # }
+doc_events = {
+    "Attendance": {
+        "on_submit": "vaaman_hr.vaaman_hr.over_time.calculate_compensatory_leave",
+        "on_cancel": "vaaman_hr.vaaman_hr.over_time.cancel_compensatory_leave"
+    }
+}
+
 # Scheduled Tasks
 # ---------------
 
