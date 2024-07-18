@@ -11,6 +11,17 @@
         "insert_after": "custom_branch",
         "__islocal": 1
     },
+    {   "doctype": "Custom Field",
+        "dt": "Attendance",
+        "module": "Vaaman Hr",
+        "name": "Attendance-leave_allocation",
+        "fieldname": "leave_allocation",
+        "fieldtype": "Link",
+        "label": "Leave Allocation",
+        "options": "Leave Allocation",
+        "insert_after": "attendance_request",
+        "__islocal": 1
+       },
     {
         "doctype": "Custom Field",
         "dt": "Attendance",
