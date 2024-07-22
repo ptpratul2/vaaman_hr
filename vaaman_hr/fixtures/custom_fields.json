@@ -21,6 +21,16 @@
         "options": "Leave Allocation",
         "insert_after": "attendance_request",
         "__islocal": 1
+       },       
+    {   "doctype": "Custom Field",
+        "dt": "Attendance",
+        "module": "Vaaman Hr",
+        "name": "Attendance-compensatory-off",
+        "fieldname": "compensatory_off",
+        "fieldtype": "Check",
+        "label": "Compensatory Off",        
+        "insert_after": "attendance_device_id",
+        "__islocal": 1
        },
     {
         "doctype": "Custom Field",
