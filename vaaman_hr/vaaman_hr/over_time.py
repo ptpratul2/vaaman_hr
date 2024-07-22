@@ -5,14 +5,16 @@ from hrms.hr.utils import create_additional_leave_ledger_entry, get_leave_period
 from frappe.utils.logger import set_log_level, get_logger
 
 @frappe.whitelist()
-def calculate_compensatory_leave(doc, method):
-    if doc.status == "Present" and doc.custom_over_time:
+def calculate_compensatory_leave(doc, method):    
+    compoff = frappe.db.get_value("Employee", doc.employee, "compensatory_off")
+    if doc.status in ["Present","Weekly Off"] and doc.custom_over_time and compoff==1:
         overtime_hours = doc.custom_over_time / 8  # Assuming 8 hours = 1 day leave
         total_leave_days = overtime_hours
 
         company = frappe.db.get_value("Employee", doc.employee, "company")
         comp_leave_valid_from = add_days(doc.attendance_date, 1)
         leave_period = get_leave_period(comp_leave_valid_from, comp_leave_valid_from, company)
+        compoff = frappe.db.get_value("Employee", doc.employee, "compensatory_off")
 
         if leave_period:
             leave_allocation = get_existing_allocation_for_period(doc, leave_period)
@@ -64,7 +66,7 @@ def get_existing_allocation_for_period(doc, leave_period):
     else:
         return False
 
-def create_leave_allocation(doc, leave_period, total_leave_days):
+def create_leave_allocation(doc, leave_period, total_leave_days):    
     is_carry_forward = frappe.db.get_value("Leave Type", "Compensatory Off", "is_carry_forward")  # Adjust this based on your actual leave type
     allocation = frappe.get_doc(
         dict(
