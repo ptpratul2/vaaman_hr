@@ -23,9 +23,9 @@
         "__islocal": 1
        },       
     {   "doctype": "Custom Field",
-        "dt": "Attendance",
+        "dt": "Employee",
         "module": "Vaaman Hr",
-        "name": "Attendance-compensatory-off",
+        "name": "Employee-compensatory-off",
         "fieldname": "compensatory_off",
         "fieldtype": "Check",
         "label": "Compensatory Off",        
