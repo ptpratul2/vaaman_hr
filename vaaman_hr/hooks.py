@@ -169,11 +169,19 @@ doc_events = {
 # 	],
 # }
 
+# scheduler_events = {
+#     "daily": [
+#         "vaaman_hr.purchase_invoice.create_payment_request"
+#     ]
+# }
 scheduler_events = {
-    "daily": [
-        "vaaman_hr.purchase_invoice.create_payment_request"
-    ]
+    "cron": {
+        "*/30 * * * *": [
+            "vaaman_hr.purchase_invoice.create_payment_request"
+        ]
+    }
 }
+
 
 
 # Testing
