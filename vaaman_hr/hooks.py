@@ -181,6 +181,13 @@ scheduler_events = {
         ]
     }
 }
+scheduler_events = {
+    "cron": {
+        "*/30 * * * *": [  # Runs daily at 1:00 AM
+            "vaaman_hr.purchase_invoice.create_backdated_payment_requests"
+        ]
+    }
+}
 
 
 
