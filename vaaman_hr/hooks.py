@@ -168,26 +168,17 @@ doc_events = {
 # 		"vaaman_hr.tasks.monthly"
 # 	],
 # }
-
-# scheduler_events = {
-#     "daily": [
-#         "vaaman_hr.purchase_invoice.create_payment_request"
-#     ]
-# }
 scheduler_events = {
+    "daily": [
+        "vaaman_hr.purchase_invoice.create_payment_request"
+    ],
     "cron": {
-        "*/30 * * * *": [
+        "* * * * *": [  # Runs every minute
             "vaaman_hr.purchase_invoice.create_payment_request"
         ]
     }
 }
-scheduler_events = {
-    "cron": {
-        "*/30 * * * *": [  # Runs daily at 1:00 AM
-            "vaaman_hr.purchase_invoice.create_backdated_payment_requests"
-        ]
-    }
-}
+
 
 
 
