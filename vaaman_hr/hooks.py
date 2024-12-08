@@ -145,7 +145,14 @@ doc_events = {
     "Attendance": {
         "on_submit": "vaaman_hr.vaaman_hr.over_time.calculate_compensatory_leave",
         "on_cancel": "vaaman_hr.vaaman_hr.over_time.cancel_compensatory_leave"
-    }
+    },
+    
+    # "Payment Request": {
+    #     "on_submit": "vaaman_hr.purchase_invoice.update_payment_request_status"
+    # }
+
+
+
 }
 
 # Scheduled Tasks
@@ -170,6 +177,9 @@ doc_events = {
 # }
 scheduler_events = {
     "daily": [
+        "vaaman_hr.purchase_invoice.create_payment_request"
+    ],
+    "all": [
         "vaaman_hr.purchase_invoice.create_payment_request"
     ],
     "cron": {
