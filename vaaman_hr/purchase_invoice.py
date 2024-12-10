@@ -42,7 +42,7 @@ def create_payment_request():
                     "party": invoice["supplier"],
                     "reference_doctype": "Purchase Invoice",
                     "reference_name": invoice["name"],
-                    "grand_total": invoice["grand_total"],
+                    "grand_total": invoice["outstanding_amount"],
                     "due_date": invoice["due_date"],
                     "custom_supplier_invoice_no": invoice["bill_no"],
                     "custom_supplier_invoice_date": invoice["bill_date"],
