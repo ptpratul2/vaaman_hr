@@ -14,7 +14,7 @@ def create_payment_request():
             "outstanding_amount": (">", 0),  # Outstanding amount must be greater than 0
             "docstatus": 1,  # Only submitted invoices
             "due_date": ["<=", target_date],  # Due today or in the next 7 days
-            "custom_creation_date": [">=", "2024-12-01"]  # Created after a specific date
+            # "custom_creation_date": [">=", "2024-12-01"]  # Created after a specific date
         },
         fields=[
             "name", "supplier", "grand_total", "outstanding_amount", "due_date", 
@@ -33,7 +33,7 @@ def create_payment_request():
                 }
             )
             
-            if not existing_request and invoice["naming_series"] != "CS/PINV-.YY.-":
+            if not existing_request and invoice["naming_series"] != "CS/PINV-.YY.-" and  invoice["due_date"] >= "2024-12-01":
                 # Create a Payment Request
                 payment_request = frappe.get_doc({
                     "doctype": "Payment Request",
