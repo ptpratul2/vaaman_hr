@@ -1,5 +1,6 @@
 import frappe
 from frappe.utils import nowdate, add_days
+from datetime import datetime
 
 @frappe.whitelist()
 def create_payment_request():
@@ -32,8 +33,10 @@ def create_payment_request():
                     "docstatus": ("<", 2)  # Draft or submitted requests
                 }
             )
-            
-            if not existing_request and invoice["naming_series"] != "CS/PINV-.YY.-" and  invoice["due_date"] >= "2024-12-01":
+            due_date = datetime.strptime(invoice["due_date"], "%Y-%m-%d").date()
+            if not existing_request and invoice["naming_series"] != "CS/PINV-.YY.-" and due_date >= datetime(2024, 12, 1).date():
+       
+            # if not existing_request and invoice["naming_series"] != "CS/PINV-.YY.-" and  invoice["due_date"] >= "2024-12-01":
                 # Create a Payment Request
                 payment_request = frappe.get_doc({
                     "doctype": "Payment Request",
