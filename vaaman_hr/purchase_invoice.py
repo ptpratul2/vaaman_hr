@@ -1,5 +1,7 @@
 import frappe
+from frappe import ValidationError, _, qb, scrub, throw
 from frappe.utils import nowdate, add_days, getdate
+from frappe.utils.data import comma_and
 import traceback
 
 @frappe.whitelist()
@@ -100,3 +102,35 @@ def update_payment_request_status(doc, method):
     if doc.workflow_state == "Approved":  # Match with your workflow's "Approved" state
         doc.status = "Ready to Pay"
         doc.save()
+
+@frappe.whitelist()
+def validate_invoice_outstanding(doc, method):
+    """
+    Validate outstanding amounts for invoices linked to a Payment Request before submission.
+    """
+    no_outstanding_refs = {}
+
+    # Ensure it's linked to invoices
+    if doc.reference_doctype in ("Sales Invoice", "Purchase Invoice"):
+        # Get details from the referenced invoice
+        outstanding_amount, is_return = frappe.get_cached_value(
+            doc.reference_doctype,
+            doc.reference_name,
+            ["outstanding_amount", "is_return"]
+        )
+
+        # Check if outstanding amount is zero or negative
+        if outstanding_amount <= 0 and not is_return:
+            no_outstanding_refs.setdefault(doc.reference_doctype, []).append(doc)
+
+    # Display a warning message for invoices with no outstanding amount
+    for reference_doctype, references in no_outstanding_refs.items():
+        frappe.throw(
+            _(
+                "References {0} of type {1} have no outstanding amount left and cannot proceed."
+            ).format(
+                frappe.bold(comma_and([d.reference_name for d in references])),
+                _(reference_doctype),
+            ),
+            title=_("Validation Error"),
+        )

@@ -147,11 +147,10 @@ doc_events = {
         "on_cancel": "vaaman_hr.vaaman_hr.over_time.cancel_compensatory_leave"
     },
     
-    # "Payment Request": {
-    #     "on_submit": "vaaman_hr.purchase_invoice.update_payment_request_status"
-    # }
-
-
+    
+    "Payment Request": {
+        "on_submit": "vaaman_hr.purchase_invoice.validate_invoice_outstanding"
+    }
 
 }
 
