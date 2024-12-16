@@ -52,12 +52,36 @@ class CompOff(CompensatoryLeaveRequest):
                 },
                 fields=["attendance_date", "status", "custom_over_time"],
             )
-
+            weekend = frappe.db.sql(
+                            """
+                            SELECT 
+                                a.attendance_date, a.status, a.custom_over_time, h.holiday_date, h.weekly_off 
+                            FROM 
+                                `tabAttendance` a
+                            LEFT JOIN 
+                                `tabHoliday` h ON a.attendance_date = h.holiday_date
+                            WHERE 
+                                a.employee = %(employee)s
+                                AND a.attendance_date BETWEEN %(start_date)s AND %(end_date)s
+                                AND a.docstatus = 1
+                                AND h.parent = %(holiday_list)s
+                                AND h.weekly_off = 1
+                            """,
+                            {
+                                "employee": self.employee,
+                                "start_date": self.work_from_date,
+                                "end_date": self.work_end_date,
+                                "holiday_list": holidays,
+                            },
+                            as_dict=True,
+                        )
             # Filter for "Weekly Off" days with overtime
             overtime_days = [entry.attendance_date for entry in attendance_records if entry.custom_over_time > 0]
+            weekend_days = [entry["attendance_date"] for entry in weekend if entry["weekly_off"] == 1]
+
 
             # Check if there are valid holidays or weekly off days with overtime
-            if holidays  or overtime_days:
+            if holidays  or overtime_days or weekend_days:
                 frappe.msgprint("Compensatory leave will be added for the following dates: {}".format(", ".join([frappe.bold(format_date(day)) for day in overtime_days or holidays])))
             elif not holidays and not overtime_days:
                 if date_diff(self.work_end_date, self.work_from_date):
@@ -161,5 +185,4 @@ class CompOff(CompensatoryLeaveRequest):
 
         return overtime_leave_days
   
-
 
