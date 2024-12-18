@@ -40,13 +40,13 @@ class CompOff(CompensatoryLeaveRequest):
 
     def validate_holidays(self):
             holidays = get_holiday_dates_for_employee(self.employee, self.work_from_date, self.work_end_date)
-
+            holiday_list = frappe.db.get_value('Employee', self.employee, 'holiday_list')
             # Fetch attendance records including "Weekly Off"
             attendance_records = frappe.get_all(
                 "Attendance",
                 filters={
                     "attendance_date": ["between", (self.work_from_date, self.work_end_date)],
-                    "status": "Weekly Off",
+                    "status": ("in", ["Work From Home","Weekly Off"]),
                     "docstatus": 1,
                     "employee": self.employee,
                 },
@@ -55,7 +55,7 @@ class CompOff(CompensatoryLeaveRequest):
             weekend = frappe.db.sql(
                             """
                             SELECT 
-                                a.attendance_date, a.status, a.custom_over_time, h.holiday_date, h.weekly_off 
+                                a.attendance_date, a.status, h.holiday_date, h.weekly_off 
                             FROM 
                                 `tabAttendance` a
                             LEFT JOIN 
@@ -71,18 +71,19 @@ class CompOff(CompensatoryLeaveRequest):
                                 "employee": self.employee,
                                 "start_date": self.work_from_date,
                                 "end_date": self.work_end_date,
-                                "holiday_list": holidays,
+                                "holiday_list": holiday_list,
                             },
                             as_dict=True,
                         )
+
             # Filter for "Weekly Off" days with overtime
-            overtime_days = [entry.attendance_date for entry in attendance_records if entry.custom_over_time > 0]
+            overtime_days = [entry.attendance_date for entry in attendance_records if entry.custom_over_time > 0 and entry.status =="Weekly Off"] 
+            wfh = [entry.attendance_date for entry in attendance_records if entry.status =="Work From Home"]
             weekend_days = [entry["attendance_date"] for entry in weekend if entry["weekly_off"] == 1]
 
-
             # Check if there are valid holidays or weekly off days with overtime
-            if holidays  or overtime_days or weekend_days:
-                frappe.msgprint("Compensatory leave will be added for the following dates: {}".format(", ".join([frappe.bold(format_date(day)) for day in overtime_days or holidays])))
+            if holidays  or overtime_days or weekend_days or wfh:
+                frappe.msgprint("Compensatory leave will be added for the following dates: {}".format(", ".join([frappe.bold(format_date(day)) for day in overtime_days or holidays or wfh])))
             elif not holidays and not overtime_days:
                 if date_diff(self.work_end_date, self.work_from_date):
                     msg = _("The days between {0} to {1} are not valid holidays or weekly offs with overtime.").format(
@@ -185,4 +186,5 @@ class CompOff(CompensatoryLeaveRequest):
 
         return overtime_leave_days
   
+
 
