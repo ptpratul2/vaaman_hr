@@ -83,7 +83,7 @@ class CompOff(CompensatoryLeaveRequest):
 
             # Check if there are valid holidays or weekly off days with overtime
             if holidays  or overtime_days or weekend_days or wfh:
-                frappe.msgprint("Compensatory leave will be added for the following dates: {}".format(", ".join([frappe.bold(format_date(day)) for day in overtime_days or holidays or wfh])))
+                frappe.msgprint("Compensatory leave will be added for the following dates: {}".format(", ".join([frappe.bold(format_date(day)) for day in overtime_days or holidays or wfh or weekend_days])))
             elif not holidays and not overtime_days:
                 if date_diff(self.work_end_date, self.work_from_date):
                     msg = _("The days between {0} to {1} are not valid holidays or weekly offs with overtime.").format(
