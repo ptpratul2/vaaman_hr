@@ -175,17 +175,17 @@ doc_events = {
 # 	],
 # }
 scheduler_events = {
-    "daily": [
-        "vaaman_hr.purchase_invoice.create_payment_request"
-    ],
-    "all": [
-        "vaaman_hr.purchase_invoice.create_payment_request"
-    ],
-    "cron": {
-        "* * * * *": [  # Runs every minute
-            "vaaman_hr.purchase_invoice.create_payment_request"
-        ]
-    }
+    # "daily": [
+    #     "vaaman_hr.purchase_invoice.create_payment_request"
+    # ],
+    # "all": [
+    #     "vaaman_hr.purchase_invoice.create_payment_request"
+    # ],
+    # "cron": {
+    #     "* * * * *": [  # Runs every minute
+    #         "vaaman_hr.purchase_invoice.create_payment_request"
+    #     ]
+    # }
 }
 
 
