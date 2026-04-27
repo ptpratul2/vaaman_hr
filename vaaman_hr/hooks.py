@@ -151,7 +151,10 @@ override_doctype_class = {
 
 doc_events = {
     "Attendance": {
-        "after_insert": "vaaman_hr.vaaman_hr.half_day_leaves.validate_half_day_attendance"
+        "before_save": "vaaman_hr.vaaman_hr.half_day_leaves.validate_half_day_attendance",
+        "on_update": "vaaman_hr.vaaman_hr.half_day_leaves.validate_half_day_attendance",
+        "on_change": "vaaman_hr.vaaman_hr.half_day_leaves.validate_half_day_attendance"
+        
     },
     
     "OverTime Import": {

@@ -76,12 +76,29 @@ def get_message() -> str:
 
     count = 0
     for status, abbr in status_map.items():
+        color = colors[count] if count < len(colors) else "#878787"
         message += f"""
-            <span style='border-left: 2px solid {colors[count]}; padding-right: 12px; padding-left: 5px; margin-right: 3px;'>
+           <span style='border-left: 2px solid {color}; padding-right: 12px; padding-left: 5px; margin-right: 3px;'>
                 {status} - {abbr}
             </span>
         """
         count += 1
+    
+    for leave_name, abbr in leave_type_abbr.items():
+        color = colors[count] if count < len(color) else "#878787"
+        message += f"""
+           <span style='border-left: 2px solid {color}; padding-right: 12px; padding-left: 5px; margin-right: 3px;'>
+                {leave_name} - {abbr}
+            </span>
+        """
+    special_items = {"Paid Public Holiday": "PPH", "Holiday Present": "H/P"}
+    for label, abbr in special_items.items():
+        message += f"""
+            <span style='border-left: 2px solid #8e44ad; padding-right: 12px; padding-left: 5px; margin-right: 3px;'>
+                {label} - {abbr}
+            </span>
+        """
+      
 
     return message
 
@@ -636,15 +653,14 @@ def get_attendance_summary_and_days(employee: str, filters: Filters) -> tuple[di
     return summary[0], days
 
 
+
 def get_attendance_status_for_detailed_view(
     employee: str, filters: Filters, employee_attendance: dict, holidays: list
 ) -> list[dict]:
     total_days = get_total_days_in_month(filters)
     attendance_values = []
-    leave_summary = get_leave_summary(employee, filters)
-    entry_exit = get_entry_exits_summary(employee, filters)
-
-    # Leave Application Map
+    
+   
     leave_day_map = {}
     leave_apps = frappe.db.get_all(
         "Leave Application",
@@ -655,16 +671,14 @@ def get_attendance_status_for_detailed_view(
         },
         fields=["from_date", "to_date", "leave_type"]
     )
+    
     for app in leave_apps:
-        if app.leave_type == "Sick Leave - Zinc":
-            abbr = "SLZ"
-        else:
-            abbr = leave_type_abbr.get(app.leave_type, "L")
-            
+        abbr = "SLZ" if app.leave_type == "Sick Leave - Zinc" else leave_type_abbr.get(app.leave_type, "L")
         curr = getdate(app.from_date)
         while curr <= getdate(app.to_date):
             if curr.month == cint(filters.month):
-                leave_day_map.setdefault(curr.day, []).append(abbr)
+                if abbr not in leave_day_map.get(curr.day, []):
+                    leave_day_map.setdefault(curr.day, []).append(abbr)
             curr = frappe.utils.add_days(curr, 1)
 
     att_info = frappe.db.get_all(
@@ -673,10 +687,11 @@ def get_attendance_status_for_detailed_view(
             "employee": employee, "docstatus": 1,
             "attendance_date": ["between", [f"{filters.year}-{filters.month}-01", f"{filters.year}-{filters.month}-{total_days}"]]
         },
-        fields=["attendance_date", "status", "half_day_status", "leave_type"]
+        fields=["attendance_date", "status", "half_day_status", "leave_type", "leave_application", "in_time", "out_time"]
     )
     att_map = {getdate(d.attendance_date).day: d for d in att_info}
 
+    # 3. Main Calculation Loop
     for shift, status_dict in employee_attendance.items():
         row = {}
         t_p = t_a = t_l = t_h = t_wo = t_un = t_pph = 0.0
@@ -684,7 +699,7 @@ def get_attendance_status_for_detailed_view(
         for day in range(1, total_days + 1):
             day_att = att_map.get(day)
             h_status = get_holiday_status(day, holidays)
-            day_leaves = list(set(leave_day_map.get(day, [])))
+            day_leaves = list(set(leave_day_map.get(day, []))) # CL/SL list
             
             abbr = ""
             if h_status == "Holiday":
@@ -694,97 +709,88 @@ def get_attendance_status_for_detailed_view(
             elif h_status == "Weekly Off":
                 abbr = "WO"; t_wo += 1
 
-            elif day_att:   # Attendance record exists
+            elif day_att:
+                m_leave_type = day_att.leave_type
+                m_leave_abbr = "SLZ" if m_leave_type == "Sick Leave - Zinc" else leave_type_abbr.get(m_leave_type, "L") if m_leave_type else ""
+                
+                target_col = "Sick Leave" if m_leave_type == "Sick Leave - Zinc" else m_leave_type
+                lt_key = frappe.scrub(target_col) if target_col else None
+                
+                # Punch check 
+                has_punch = True if day_att.in_time or day_att.out_time else False
+
                 if day_att.status == "Half Day":
-                    # =============================================================
-                    # YOUR EXACT REQUIREMENT:
-                    # If half_day_status == "Absent"  → Show "HD/A"  (Half Absent + Other Present)
-                    # If half_day_status == "Present" → Show "HD/P"  (Half Present + Other Absent)
-                    # =============================================================
-                    if day_att.half_day_status == "Absent":
-                        # Half day is Absent → Other half is Present
-                        abbr = "HD/A"
-                        t_a += 0.5      # Half day Absent
-                        t_p += 0.5      # Other half Present
-                    else:
-                        # Half day is Present → Other half is Absent
-                        abbr = "HD/P"
-                        t_p += 0.5      # Half day Present
-                        t_a += 0.5      # Other half Absent
-
-                    # Handle Leave Type if linked with this Half Day
-                    if day_att.leave_type == "Sick Leave - Zinc":
-                        m_leave = "SLZ"
-                    else:
-                        m_leave = leave_type_abbr.get(day_att.leave_type, "")
-
-                    if m_leave and m_leave not in day_leaves:
-                        day_leaves.append(m_leave)
-
-                    l_str = "/".join(day_leaves) if day_leaves else ""
-
-                    # If there is any leave on this day, combine it
-                    if day_leaves:
-                        if len(day_leaves) > 1:
-                            abbr = f"HD/{l_str}"                    # e.g. HD/CL/SL
+                   
+                    
+                   
+                    if len(day_leaves) > 1:
+                        abbr = f"HD/{'/'.join(day_leaves)}"
+                        t_l += 1.0
+                        if lt_key: row[lt_key] = row.get(lt_key, 0.0) + 1.0
+                    
+                    
+                    elif has_punch:
+                        if day_att.half_day_status == "Present":
+                            t_p += 0.5
+                            if day_att.leave_application or m_leave_abbr:
+                                abbr = f"HD/P/{m_leave_abbr}"
+                                t_l += 0.5
+                                if lt_key: row[lt_key] = row.get(lt_key, 0.0) + 0.5
+                            else:
+                               
+                                abbr = "HD/P/A"
+                                t_a += 0.5
                         else:
-                            abbr = f"{abbr}/{l_str}"                # e.g. HD/A/CL  or  HD/P/SL
+                            
+                            abbr = f"HD/{m_leave_abbr}/A" if (day_att.leave_application or m_leave_abbr) else "A"
+                            t_a += 0.5 if (day_att.leave_application or m_leave_abbr) else 1.0
+                            t_l += 0.5 if (day_att.leave_application or m_leave_abbr) else 0.0
+                            if lt_key and (day_att.leave_application or m_leave_abbr): 
+                                row[lt_key] = row.get(lt_key, 0.0) + 0.5
+
+                    else:
+                        
+                        status_part = "P" if day_att.half_day_status == "Present" else "A"
+                        if m_leave_abbr:
+                            abbr = f"HD/{m_leave_abbr}/{status_part}"
+                            t_l += 0.5
+                            if lt_key: row[lt_key] = row.get(lt_key, 0.0) + 0.5
+                        else:
+                            abbr = f"HD/{status_part}"
+                        
+                        if status_part == "P": t_p += 0.5
+                        else: t_a += 0.5
+                    
 
                 elif day_att.status == "On Leave":
-                    if day_att.leave_type == "Sick Leave - Zinc":
-                        m_leave = "SLZ"
-                    else:
-                        m_leave = leave_type_abbr.get(day_att.leave_type, "L") if day_att.leave_type else "L"
-
-                    abbr = m_leave if m_leave not in day_leaves else "/".join(day_leaves)
+                    abbr = "/".join(day_leaves) if day_leaves else (m_leave_abbr or "L")
                     t_l += 1.0
+                    if lt_key: row[lt_key] = row.get(lt_key, 0.0) + 1.0
 
                 else:
-                    # Normal attendance: Present, Absent, Work From Home, etc.
                     abbr = status_map.get(day_att.status, "")
-                    if abbr in ("P", "WFH") or day_att.status == "Work From Home":
-                        t_p += 1.0
-                    elif abbr == "A":
-                        t_a += 1.0
-
+                    if abbr in ("P", "WFH"): t_p += 1.0
+                    elif abbr == "A": t_a += 1.0
             else:
-                # No attendance record → Unmarked day
                 t_un += 1
 
-            # --- COLOR LOGIC ADDED HERE ---
+            # HTML Formatting
             if "HD" in abbr:
                 row[cstr(day)] = f"<span style='color:orange; font-weight:bold'>{abbr}</span>"
-            elif abbr == "SLZ":
-                # Sick Leave - Zinc (Purple color)
-                row[cstr(day)] = f"<span style='color:#8e44ad; font-weight:bold'>{abbr}</span>"
-            elif abbr == "SL":
-                # Sick Leave (Red color)
-                row[cstr(day)] = f"<span style='color:red; font-weight:bold'>{abbr}</span>"
-            elif abbr == "CL":
-                # Casual Leave (Blue color)
-                row[cstr(day)] = f"<span style='color:#2980b9; font-weight:bold'>{abbr}</span>"
-            elif abbr == "H" or abbr == "H/P":
-                row[cstr(day)] = f"<span style='color:green; font-weight:bold'>{abbr}</span>"
             elif abbr == "A":
                 row[cstr(day)] = f"<span style='color:red; font-weight:bold'>{abbr}</span>"
+            elif abbr in ["P", "WFH"]:
+                row[cstr(day)] = f"<span style='color:green; font-weight:bold'>{abbr}</span>"
             else:
                 row[cstr(day)] = abbr
 
         row.update({
             "total_present": t_p, "total_leaves": t_l, "total_absent": t_a,
-            "total_holidays": t_h, "total_weekly_off": t_wo, "pph": t_pph,
-            "unmarked_days": t_un, "total_overtime": get_total_overtime(employee, filters),
-            "total_late_entries": entry_exit.get("total_late_entries", 0),
-            "total_early_exits": entry_exit.get("total_early_exits", 0)
+            "total_holidays": t_h, "total_weekly_off": t_wo, "pph": t_pph, "unmarked_days": t_un
         })
-        
-        for lt_key, lt_val in leave_summary.items():
-            row[lt_key] = lt_val
-
         attendance_values.append(row)
+
     return attendance_values
-
-
 
 def get_holiday_status(day: int, holidays: list) -> str:
     """Returns holiday status for a given day.
@@ -814,7 +820,7 @@ def get_leave_summary(employee: str, filters: Filters) -> dict:
     from_date = f"{filters.year}-{filters.month}-01"
     to_date = f"{filters.year}-{filters.month}-{total_days}"
 
-    # 1. Pehle Leave Applications se data uthao (Double Half Day handle karne ke liye)
+   
     leave_apps = frappe.db.get_all(
         "Leave Application",
         filters={
