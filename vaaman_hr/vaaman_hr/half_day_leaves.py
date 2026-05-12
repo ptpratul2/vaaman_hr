@@ -71,9 +71,6 @@ def validate_half_day_attendance(doc, method=None):
             final_status = "Absent"
             final_half_day_status = ""
 
-    # 4. Save to Database
-    
-
     frappe.db.set_value("Attendance", doc.name, {
         "working_hours": flt(working_hours),
         "status": final_status,

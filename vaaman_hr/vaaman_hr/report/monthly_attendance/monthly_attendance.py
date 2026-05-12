@@ -867,8 +867,16 @@ def get_attendance_status_for_detailed_view(
                 row[cstr(day)] = abbr
 
         row.update({
-            "total_present": t_p, "total_leaves": t_l, "total_absent": t_a,
-            "total_holidays": t_h, "total_weekly_off": t_wo, "pph": t_pph, "unmarked_days": t_un
+            "total_present": t_p, 
+            "total_leaves": t_l, 
+            "total_absent": t_a,
+            "total_holidays": t_h, 
+            "total_weekly_off": t_wo,
+            "pph": t_pph, 
+            "unmarked_days": t_un ,
+            "total_overtime": get_total_overtime(employee, filters),
+            "total_late_entries": get_entry_exits_summary(employee, filters).get("total_late_entries", 0),
+            "total_early_exits": get_entry_exits_summary(employee, filters).get("total_early_exits", 0)
         })
         attendance_values.append(row)
 
