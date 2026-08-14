@@ -1741,11 +1741,13 @@ def get_attendance_status_for_detailed_view(
     att_map = {getdate(d.attendance_date).day: d for d in att_info}
 
     # 3. Main Calculation Loop
+    today = getdate()
+
     for shift, status_dict in employee_attendance.items():
         row = {}
         t_p = t_a = t_l = t_h = t_wo = t_un = t_pph = 0.0
 
-        
+
         for day in range(1, total_days + 1):
             if day < effective_start or day > effective_end:
                 row[cstr(day)] = ""
@@ -1957,21 +1959,25 @@ def get_attendance_status_for_detailed_view(
 
             else:
                 if h_status == "Holiday":
-                    
+
                     abbr = "H"
                     t_h += 1
                     # abbr = "H/P" if day_att and day_att.status in ["Present", "Half Day"] else "H"
-                    # if abbr == "H": 
+                    # if abbr == "H":
                         # t_h += 1
-                    # else: 
+                    # else:
                     #     t_pph += 1
-                    
+
                 elif h_status == "Weekly Off":
                     abbr = "WO"
                     t_wo += 1
                 else:
-                    abbr = "A"
-                    t_a += 1
+                    day_date = getdate(f"{cstr(filters.year)}-{cstr(filters.month)}-{cstr(day)}")
+                    if day_date > today:
+                        abbr = ""
+                    else:
+                        abbr = "A"
+                        t_a += 1
 
 
             # HTML Formatting
