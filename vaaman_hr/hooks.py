@@ -236,6 +236,10 @@ scheduler_events = {
         "*/5 * * * *": [
             "vaaman_hr.api2.check_and_send_shift_reminders"
         ],
+        # ⚠️ TEST MODE: */2  |  PRODUCTION: */30
+        "*/30 * * * *": [
+            "vaaman_hr.api2.run_location_health_checks"
+        ],
         "0 23 * * *": [
             "vaaman_hr.holiday_policy.process_holiday_sandwich_policy"
         ]
