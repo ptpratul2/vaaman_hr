@@ -2352,125 +2352,300 @@ def run_location_health_checks():
 # -----------------------------------------------------------------------------
 
 def _ping_silent_employees():
-    now_dt    = get_local_now()
+    now_dt = get_local_now()
     today_str = now_dt.strftime("%Y-%m-%d")
-    today_start    = today_str + " 00:00:00"
+    today_start = today_str + " 00:00:00"
     tomorrow_start = (datetime.strptime(today_str, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d") + " 00:00:00"
     silence_threshold = now_dt - timedelta(hours=2)
 
-    # Rule: Checked in today with face+geo AND currently still checked in AND within shift hours
-    rows = frappe.db.sql("""
-        SELECT
-            emp.name          AS employee,
-            st.start_time     AS shift_start,
-            st.end_time       AS shift_end,
-            MAX(ll.timestamp) AS last_location_log
-        FROM `tabEmployee` emp
-        LEFT JOIN `tabShift Assignment` sa
-            ON sa.employee  = emp.name
-           AND sa.status    = 'Active'
-           AND sa.docstatus = 1
-           AND %(today)s BETWEEN sa.start_date AND sa.end_date
-        LEFT JOIN `tabShift Type` st
-            ON st.name = IFNULL(sa.shift_type, emp.default_shift)
-        LEFT JOIN `tabLocation Log` ll
-            ON ll.employee  = emp.name
-           AND ll.timestamp >= %(today_start)s
-           AND ll.timestamp <  %(tomorrow_start)s
-        WHERE emp.status = 'Active'
-          AND EXISTS (
-              -- First checkin of the day is face+geo IN (tracking was started today)
-              SELECT 1 FROM `tabEmployee Checkin` ec_face
-              WHERE ec_face.employee                     = emp.name
-                AND ec_face.log_type                     = 'IN'
-                AND ec_face.custom_face_checkin_or_checkout = 1
-                AND ec_face.docstatus                    = 0
-                AND ec_face.time                         >= %(today_start)s
-                AND ec_face.time                         <  %(tomorrow_start)s
-                AND ec_face.time = (
-                    SELECT MIN(ec_min.time)
-                    FROM `tabEmployee Checkin` ec_min
-                    WHERE ec_min.employee = emp.name
-                      AND ec_min.time    >= %(today_start)s
-                      AND ec_min.time    <  %(tomorrow_start)s
-                      AND ec_min.docstatus = 0
-                )
-          )
-          AND EXISTS (
-              -- Current status is still IN (they haven't manually checked out)
-              SELECT 1 FROM `tabEmployee Checkin` ec_in
-              WHERE ec_in.employee  = emp.name
-                AND ec_in.log_type  = 'IN'
-                AND ec_in.docstatus = 0
-                AND ec_in.time      >= %(today_start)s
-                AND ec_in.time      <  %(tomorrow_start)s
-                AND ec_in.time = (
-                    SELECT MAX(ec_max.time)
-                    FROM `tabEmployee Checkin` ec_max
-                    WHERE ec_max.employee = emp.name
-                      AND ec_max.time    >= %(today_start)s
-                      AND ec_max.time    <  %(tomorrow_start)s
-                      AND ec_max.docstatus = 0
-                )
-          )
-        GROUP BY emp.name, st.start_time, st.end_time
-    """, {
-        "today":          today_str,
-        "today_start":    today_start,
-        "tomorrow_start": tomorrow_start
-    }, as_dict=True)
+    # Step 1: Fetch all checkins for the day (fast single table read)
+    checkins = frappe.db.sql("""
+        SELECT employee, log_type, time, custom_face_checkin_or_checkout
+        FROM `tabEmployee Checkin`
+        WHERE time >= %(today_start)s AND time < %(tomorrow_start)s
+          AND docstatus = 0
+        ORDER BY time ASC
+    """, {"today_start": today_start, "tomorrow_start": tomorrow_start}, as_dict=True)
 
-    if not rows:
+    if not checkins:
         return
 
-    # One query — get ping count per employee today (max 2 allowed)
+    # Group checkins by employee in memory
+    emp_checkins = {}
+    for c in checkins:
+        if c.employee not in emp_checkins:
+            emp_checkins[c.employee] = []
+        emp_checkins[c.employee].append(c)
+
+    # Find eligible employees (First is Face IN, Last is IN)
+    eligible_emps = []
+    for emp, logs in emp_checkins.items():
+        first_log = logs[0]
+        last_log = logs[-1]
+        if first_log.log_type == 'IN' and first_log.custom_face_checkin_or_checkout:
+            if last_log.log_type == 'IN':
+                eligible_emps.append(emp)
+
+    if not eligible_emps:
+        return
+
+    # Step 2: Fetch shifts for eligible employees
+    emp_records = frappe.db.sql("""
+        SELECT name, default_shift
+        FROM `tabEmployee`
+        WHERE name IN %(emps)s AND status = 'Active'
+    """, {"emps": tuple(eligible_emps)}, as_dict=True)
+    emp_defaults = { r.name: r.default_shift for r in emp_records }
+
+    assignments = frappe.db.sql("""
+        SELECT employee, shift_type
+        FROM `tabShift Assignment`
+        WHERE employee IN %(emps)s
+          AND status = 'Active'
+          AND docstatus = 1
+          AND %(today)s BETWEEN start_date AND end_date
+    """, {"emps": tuple(eligible_emps), "today": today_str}, as_dict=True)
+    emp_assignments = { a.employee: a.shift_type for a in assignments }
+
+    shift_types = frappe.db.sql("SELECT name, start_time, end_time FROM `tabShift Type`", as_dict=True)
+    shift_details = { st.name: st for st in shift_types }
+
+    active_shift_emps = []
+    for emp in eligible_emps:
+        if emp not in emp_defaults:
+            continue
+            
+        shift_name = emp_assignments.get(emp) or emp_defaults.get(emp)
+        if not shift_name:
+            continue
+            
+        shift_info = shift_details.get(shift_name)
+        if not shift_info or not shift_info.start_time or not shift_info.end_time:
+            continue
+            
+        shift_end_dt = _resolve_shift_end_dt(shift_info.start_time, shift_info.end_time, today_str)
+        base = datetime.strptime(today_str, "%Y-%m-%d")
+        shift_start_dt = (base + shift_info.start_time) if isinstance(shift_info.start_time, timedelta) \
+                         else get_datetime(f"{today_str} {shift_info.start_time}")
+
+        # Only check employees whose shift is currently active
+        if shift_start_dt <= now_dt <= shift_end_dt:
+            active_shift_emps.append(emp)
+
+    if not active_shift_emps:
+        return
+
+    # Step 3: Fetch last location logs ONLY for active shift employees
+    loc_logs = frappe.db.sql("""
+        SELECT employee, MAX(timestamp) as last_time
+        FROM `tabLocation Log`
+        WHERE timestamp >= %(today_start)s AND timestamp < %(tomorrow_start)s
+          AND employee IN %(emps)s
+        GROUP BY employee
+    """, {
+        "today_start": today_start,
+        "tomorrow_start": tomorrow_start,
+        "emps": tuple(active_shift_emps)
+    }, as_dict=True)
+    
+    loc_times = { loc.employee: loc.last_time for loc in loc_logs }
+    
+    silent_emps = []
+    for emp in active_shift_emps:
+        last_time = loc_times.get(emp)
+        # If no log today, or log is older than 2 hours
+        if not last_time or get_datetime(str(last_time)) < silence_threshold:
+            silent_emps.append(emp)
+
+    if not silent_emps:
+        return
+
+    # Step 4: Check ping counts for silent employees
     ping_counts = {}
     for r in frappe.db.sql("""
         SELECT send_to_employee, COUNT(*) AS cnt
         FROM `tabApp Push Notification`
-        WHERE title     = '📍 Attendance Tracking Alert'
+        WHERE title = '📍 Attendance Tracking Alert'
           AND creation >= %(today_start)s
-          AND creation <  %(tomorrow_start)s
+          AND creation < %(tomorrow_start)s
+          AND send_to_employee IN %(emps)s
         GROUP BY send_to_employee
-    """, {"today_start": today_start, "tomorrow_start": tomorrow_start}):
+    """, {
+        "today_start": today_start,
+        "tomorrow_start": tomorrow_start,
+        "emps": tuple(silent_emps)
+    }):
         ping_counts[r[0]] = r[1]
 
+    # Step 5: Send notifications
     sent = 0
-    for row in rows:
-        if not row.shift_start or not row.shift_end:
+    for emp in silent_emps:
+        if ping_counts.get(emp, 0) >= 2:
             continue
-
-        shift_end_dt   = _resolve_shift_end_dt(row.shift_start, row.shift_end, today_str)
-        base           = datetime.strptime(today_str, "%Y-%m-%d")
-        shift_start_dt = (base + row.shift_start) if isinstance(row.shift_start, timedelta) \
-                         else get_datetime(f"{today_str} {row.shift_start}")
-
-        # Only ping during active shift hours (if shift ended, do not ping)
-        if not (shift_start_dt <= now_dt <= shift_end_dt):
-            continue
-
-        # Skip if location log is still fresh
-        if row.last_location_log:
-            if get_datetime(str(row.last_location_log)) >= silence_threshold:
-                continue
-
-        # Max 2 pings per employee per day
-        if ping_counts.get(row.employee, 0) >= 2:
-            continue
-
+            
         try:
             notif = frappe.new_doc("App Push Notification")
             notif.title            = "📍 Attendance Tracking Alert"
             notif.content          = "Your location hasn't been updated in 2 hours. Please open the app to keep tracking active."
-            notif.send_to_employee = row.employee
+            notif.send_to_employee = emp
             notif.insert(ignore_permissions=True)
             notif.submit()
-            ping_counts[row.employee] = ping_counts.get(row.employee, 0) + 1
+            ping_counts[emp] = ping_counts.get(emp, 0) + 1
             sent += 1
         except Exception:
-            frappe.log_error(frappe.get_traceback(), f"Location Health: Ping failed for {row.employee}")
+            frappe.log_error(frappe.get_traceback(), f"Location Health: Ping failed for {emp}")
 
     if sent > 0:
         frappe.log_error(f"Sent {sent} silent-tracker ping notifications.", "Location Health: Ping Success")
+    else:
+        frappe.log_error(f"Ping Tracker ran successfully. Found {len(silent_emps)} silent employees, but they already reached their daily ping limit (max 2).", "Location Health: Ping Status")
 
 
+
+@frappe.whitelist()
+def process_daily_auto_checkout():
+    """
+    Cron job to run once/twice a day.
+    Finds employees who checked in by face, haven't checked out,
+    and checks them out using their last location log timestamp.
+    Optimized for 25k+ employees by avoiding massive SQL joins.
+    """
+    now_dt    = get_local_now()
+    logical_today = now_dt - timedelta(hours=12)
+    today_str = logical_today.strftime("%Y-%m-%d")
+    
+    today_start    = today_str + " 00:00:00"
+    tomorrow_start = (datetime.strptime(today_str, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d") + " 00:00:00"
+
+    # Step 1: Fetch all checkins for the day (fast single table read)
+    checkins = frappe.db.sql("""
+        SELECT employee, log_type, time, custom_face_checkin_or_checkout
+        FROM `tabEmployee Checkin`
+        WHERE time >= %(today_start)s AND time < %(tomorrow_start)s
+          AND docstatus = 0
+        ORDER BY time ASC
+    """, {"today_start": today_start, "tomorrow_start": tomorrow_start}, as_dict=True)
+
+    if not checkins:
+        frappe.log_error("Daily Auto Checkout ran successfully but found 0 employees needing auto-checkout today.", "Daily Auto Checkout Status")
+        return
+
+    # Group checkins by employee in memory (O(N) - extremely fast)
+    emp_checkins = {}
+    for c in checkins:
+        if c.employee not in emp_checkins:
+            emp_checkins[c.employee] = []
+        emp_checkins[c.employee].append(c)
+
+    # Find eligible employees (First is Face IN, Last is IN)
+    eligible_emps = []
+    for emp, logs in emp_checkins.items():
+        first_log = logs[0]
+        last_log = logs[-1]
+        if first_log.log_type == 'IN' and first_log.custom_face_checkin_or_checkout:
+            if last_log.log_type == 'IN':
+                eligible_emps.append(emp)
+
+    if not eligible_emps:
+        frappe.log_error("Daily Auto Checkout ran successfully but found 0 employees needing auto-checkout today.", "Daily Auto Checkout Status")
+        return
+
+    # Step 2: Fetch employee shifts for eligible employees only
+    emp_records = frappe.db.sql("""
+        SELECT name, default_shift
+        FROM `tabEmployee`
+        WHERE name IN %(emps)s AND status = 'Active'
+    """, {"emps": tuple(eligible_emps)}, as_dict=True)
+    emp_shifts = { r.name: r.default_shift for r in emp_records if r.default_shift }
+
+    shift_types = frappe.db.sql("SELECT name, start_time, end_time FROM `tabShift Type`", as_dict=True)
+    shift_details = { st.name: st for st in shift_types }
+
+    final_emps = []
+    emp_shift_end_map = {}
+    for emp in eligible_emps:
+        shift_name = emp_shifts.get(emp)
+        if not shift_name:
+            continue
+        
+        shift_info = shift_details.get(shift_name)
+        if not shift_info or not shift_info.start_time or not shift_info.end_time:
+            continue
+            
+        shift_end_dt = _resolve_shift_end_dt(shift_info.start_time, shift_info.end_time, today_str)
+
+        # Ensure shift has ended at least 8 hours ago
+        if now_dt <= shift_end_dt + timedelta(hours=8):
+            continue
+            
+        final_emps.append(emp)
+        emp_shift_end_map[emp] = shift_end_dt
+
+    if not final_emps:
+        frappe.log_error("Daily Auto Checkout ran successfully but found 0 employees needing auto-checkout today.", "Daily Auto Checkout Status")
+        return
+
+    # Step 3: Fetch last location logs ONLY for final employees (scales well)
+    loc_logs = frappe.db.sql("""
+        SELECT employee, MAX(timestamp) as last_time
+        FROM `tabLocation Log`
+        WHERE timestamp >= %(today_start)s AND timestamp < %(tomorrow_start)s
+          AND employee IN %(emps)s
+        GROUP BY employee
+    """, {
+        "today_start": today_start,
+        "tomorrow_start": tomorrow_start,
+        "emps": tuple(final_emps)
+    }, as_dict=True)
+
+    loc_times = { loc.employee: loc.last_time for loc in loc_logs }
+    
+    # Step 4: Perform Auto Checkouts
+    checked_out_employees = []
+    for emp in final_emps:
+        out_time = loc_times.get(emp)
+        lat = None
+        lon = None
+        
+        if out_time:
+            # Safely fetch exact lat/lon without correlated subqueries
+            detail = frappe.db.sql("""
+                SELECT latitude, longitude 
+                FROM `tabLocation Log`
+                WHERE employee = %s AND timestamp = %s
+                LIMIT 1
+            """, (emp, out_time), as_dict=True)
+            if detail:
+                lat = detail[0].latitude
+                lon = detail[0].longitude
+                
+            if get_datetime(str(out_time)) > now_dt:
+                out_time = now_dt
+        else:
+            # Fallback to script running time if no location log today
+            out_time = now_dt
+
+        try:
+            checkin = frappe.new_doc("Employee Checkin")
+            checkin.employee = emp
+            checkin.log_type = "OUT"
+            checkin.time = out_time
+            if lat and lon:
+                checkin.latitude = lat
+                checkin.longitude = lon
+            
+            checkin.custom_face_checkin_or_checkout = 0
+            checkin.custom_geofence_in_or_out = 0
+            
+            checkin.insert(ignore_permissions=True)
+            checkin.add_comment("Comment", text="Auto Checkout: App killed, no face punch")
+            
+            checked_out_employees.append(emp)
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), f"Daily Auto Checkout failed for {emp}")
+
+    if checked_out_employees:
+        emp_list_str = ", ".join(checked_out_employees)
+        frappe.log_error(f"Successfully auto-checked out {len(checked_out_employees)} employees:\n{emp_list_str}", "Daily Auto Checkout Success")
+    else:
+        frappe.log_error("Daily Auto Checkout ran successfully but found 0 employees needing auto-checkout today.", "Daily Auto Checkout Status")
