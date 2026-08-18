@@ -233,11 +233,17 @@ scheduler_events = {
         "vaaman_hr.vaaman_hr.salery_component_field_add_buttton.update_history"
     ],
     "cron": {
+        "*/30 * * * *": [
+            "vaaman_hr.api2.run_location_health_checks",
+        ],
         "*/5 * * * *": [
             "vaaman_hr.api2.check_and_send_shift_reminders"
         ],
         "0 23 * * *": [
             "vaaman_hr.holiday_policy.process_holiday_sandwich_policy"
+        ],
+        "30 8 * * *": [
+           "vaaman_hr.api2.process_daily_auto_checkout" 
         ]
     }
 }
