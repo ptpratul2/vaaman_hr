@@ -1048,8 +1048,13 @@ def execute(filters: Filters | None = None) -> tuple:
         frappe.msgprint(_("No attendance records found."), alert=True, indicator="orange")
         return [], [], None, None
 
+    last_marked_day = max(
+        (day for shifts in attendance_map.values() for days in shifts.values() for day in days.keys()),
+        default=0,
+    )
+
     columns = get_columns(filters)
-    data = get_data(filters, attendance_map)
+    data = get_data(filters, attendance_map, last_marked_day)
 
     if not data:
         frappe.msgprint(_("No attendance records found for this criteria."), alert=True, indicator="orange")
@@ -1310,7 +1315,7 @@ def get_effective_end_day(relieving_date, filters: Filters) -> int:
     # Relieved after this month — all days visible
     return total_days
 
-def get_data(filters: Filters, attendance_map: dict) -> list[dict]:
+def get_data(filters: Filters, attendance_map: dict, last_marked_day: int = 0) -> list[dict]:
     employee_details, group_by_param_values = get_employee_related_details(filters)
     holiday_map = get_holiday_map(filters)
     data = []
@@ -1322,13 +1327,13 @@ def get_data(filters: Filters, attendance_map: dict) -> list[dict]:
             if not value:
                 continue
 
-            records = get_rows(employee_details[value], filters, holiday_map, attendance_map)
+            records = get_rows(employee_details[value], filters, holiday_map, attendance_map, last_marked_day)
 
             if records:
                 data.append({group_by_column: value})
                 data.extend(records)
     else:
-        data = get_rows(employee_details, filters, holiday_map, attendance_map)
+        data = get_rows(employee_details, filters, holiday_map, attendance_map, last_marked_day)
 
     return data
 
@@ -1516,7 +1521,7 @@ def get_holiday_map(filters: Filters) -> dict[str, list[dict]]:
     return holiday_map
 
 
-def get_rows(employee_details: dict, filters: Filters, holiday_map: dict, attendance_map: dict) -> list[dict]:
+def get_rows(employee_details: dict, filters: Filters, holiday_map: dict, attendance_map: dict, last_marked_day: int = 0) -> list[dict]:
     records = []
     default_holiday_list = frappe.get_cached_value("Company", filters.company, "default_holiday_list")
 
@@ -1525,7 +1530,7 @@ def get_rows(employee_details: dict, filters: Filters, holiday_map: dict, attend
         holidays = holiday_map.get(emp_holiday_list)
 
         if filters.summarized_view:
-            attendance = get_attendance_status_for_summarized_view(employee, filters, holidays)
+            attendance = get_attendance_status_for_summarized_view(employee, filters, holidays, last_marked_day)
             if not attendance:
                 continue
 
@@ -1539,7 +1544,7 @@ def get_rows(employee_details: dict, filters: Filters, holiday_map: dict, attend
             row.update(entry_exits_summary)
             row["total_overtime"] = get_total_overtime(employee, filters)
             row["additinal_ot"] = get_additional_ot(employee, filters)
-          
+
 
             records.append(row)
         else:
@@ -1548,7 +1553,7 @@ def get_rows(employee_details: dict, filters: Filters, holiday_map: dict, attend
                 continue
 
             attendance_for_employee = get_attendance_status_for_detailed_view(
-                employee, filters, employee_attendance, holidays, details.date_of_joining, details.relieving_date
+                employee, filters, employee_attendance, holidays, details.date_of_joining, details.relieving_date, last_marked_day
             )
             # set employee details in the first row
             attendance_for_employee[0].update({"employee": employee, "employee_name": details.employee_name, "custom_staffworker": details.custom_staffworker, "attendance_device_id": details.attendance_device_id,})
@@ -1564,9 +1569,9 @@ def set_defaults_for_summarized_view(filters, row):
             row[entry.get("fieldname")] = 0.0
 
 
-def get_attendance_status_for_summarized_view(employee: str, filters: Filters, holidays: list) -> dict:
+def get_attendance_status_for_summarized_view(employee: str, filters: Filters, holidays: list, last_marked_day: int = 0) -> dict:
     # Sync with detailed view logic
-    detailed_data = get_attendance_status_for_detailed_view(employee, filters, {"": {}}, holidays)
+    detailed_data = get_attendance_status_for_detailed_view(employee, filters, {"": {}}, holidays, last_marked_day=last_marked_day)
     if not detailed_data: return {}
     res = detailed_data[0]
     return {
@@ -1634,7 +1639,7 @@ def get_attendance_summary_and_days(employee: str, filters: Filters) -> tuple[di
 
 
 def get_attendance_status_for_detailed_view(
-    employee: str, filters: Filters, employee_attendance: dict, holidays: list, date_of_joining=None, relieving_date=None
+    employee: str, filters: Filters, employee_attendance: dict, holidays: list, date_of_joining=None, relieving_date=None, last_marked_day: int = 0
 
 ) -> list[dict]:
 
@@ -1675,8 +1680,6 @@ def get_attendance_status_for_detailed_view(
     att_map = {getdate(d.attendance_date).day: d for d in att_info}
 
     # 3. Main Calculation Loop
-    today = getdate()
-
     for shift, status_dict in employee_attendance.items():
         row = {}
         t_p = t_a = t_l = t_h = t_wo = t_un = t_pph = 0.0
@@ -1917,8 +1920,7 @@ def get_attendance_status_for_detailed_view(
                     abbr = "WO"
                     t_wo += 1
                 else:
-                    day_date = getdate(f"{cstr(filters.year)}-{cstr(filters.month)}-{cstr(day)}")
-                    if day_date > today:
+                    if day > last_marked_day:
                         abbr = ""
                     else:
                         abbr = "A"
