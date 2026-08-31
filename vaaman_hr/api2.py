@@ -226,10 +226,34 @@ def get_employee_checkin_status(employee):
         },
     )
 
+    has_health_flag_out = False
+    if last_checkin and last_checkin.get("log_type") == "IN":
+        # SAFE FETCH: Use time to detect logs created by the cron job AFTER the manual checkin (Offline Safe)
+        logs = frappe.get_all(
+            "Employee Checkin",
+            filters={
+                "employee": employee,
+                "time": (">", last_checkin.get("time")),
+                "custom_geofence_in_or_out": 1,
+                "docstatus": 0
+            },
+            fields=["name", "log_type", "custom_health_flag", "time"],
+            order_by="time desc",
+            limit=1
+        )
+
+        if logs:
+            last_geo_log = logs[0]
+            is_health_flag = frappe.utils.cint(last_geo_log.get("custom_health_flag")) == 1
+            if last_geo_log.get("log_type") == "OUT" and is_health_flag:
+                has_health_flag_out = True
+
     return {
         "status": real_status,
+        "manual_status": last_checkin.get("log_type") if last_checkin else "OUT",
         "outdoor": outdoor_flag,
         "has_checked_in_today": bool(has_checked_in_today),
+        "has_health_flag_out": has_health_flag_out,
     }
 
 
@@ -794,7 +818,7 @@ def log_geofence_event_batch(employee, events):
                 frappe.get_traceback(),
                 f"Failed to process one event in geofence batch: {event}"
             )
-
+        frappe.db.commit()
     return {
         "logged": logged_count,
         "skipped": skipped_count,
@@ -1179,11 +1203,49 @@ def log_employee_location_batch(employee, locations, branch_unit=None):
             log_doc.longitude = flt(loc.get("longitude"))
             log_doc.timestamp = ist_time.replace(tzinfo=None)
             log_doc.branch_unit = branch_unit
-            
             log_doc.custom_activity = loc.get("activity", "UNKNOWN")
+            # ✅ Store accuracy so map API can filter for display,
+            # and health checks can use ANY point (even poor accuracy)
+            # as proof-of-life that the app was running.
+            log_doc.accuracy = flt(loc.get("accuracy", 0))
             
             log_doc.insert(ignore_permissions=True)
-        
+        frappe.db.commit()
+
+        # -------------------------------------------------------------------------
+        # SELF-HEALING: Remove False Positive "Health Flag OUTs"
+        # If the user was in a basement (offline) for 45 mins, the server might
+        # have assumed the app was killed and marked them OUT. Now that their
+        # offline logs have synced, we check if there are location points that
+        # prove the app was actually running. If proven, we delete the OUT log!
+        # -------------------------------------------------------------------------
+        today_start = get_local_now().strftime("%Y-%m-%d") + " 00:00:00"
+        false_outs = frappe.db.sql("""
+            SELECT name, time FROM `tabEmployee Checkin`
+            WHERE employee = %s
+              AND custom_health_flag = 1
+              AND log_type = 'OUT'
+              AND time >= %s
+        """, (employee, today_start), as_dict=True)
+
+        for fp in false_outs:
+            fp_time = fp.time
+            # Look for ANY location ping within 5 minutes after the assumed OUT time.
+            # Offline apps ping every 30s (walking) or 3 minutes (STILL), so a 5-minute
+            # window guarantees we find a point if they were just offline.
+            # If the app was genuinely killed, there will be a hard gap of no points.
+            proof = frappe.db.sql("""
+                SELECT name FROM `tabLocation Log`
+                WHERE employee = %s
+                  AND timestamp > %s
+                  AND timestamp <= %s
+                LIMIT 1
+            """, (employee, fp_time + timedelta(seconds=5), fp_time + timedelta(minutes=5)))
+
+            if proof:
+                frappe.delete_doc("Employee Checkin", fp.name, ignore_permissions=True)
+                frappe.log_error(f"Auto-deleted false positive health flag OUT for {employee} at {fp_time} because offline logs proved the app was running.", "Location Offline Sync Recovery")
+
         frappe.db.commit()
         return {"status": "success", "message": f"Successfully logged {len(locations_list)} location points."}
 
@@ -1400,13 +1462,16 @@ def get_filtered_historical_paths(date, department=None, branch=None, employee_i
         overall_start = datetime.strptime(f"{date} 00:00:00", "%Y-%m-%d %H:%M:%S")
         overall_end = datetime.strptime(f"{date} 23:59:59", "%Y-%m-%d %H:%M:%S")
 
-    # Fetch Location Logs
+    # Fetch Location Logs — fetch accuracy field too; filter on server for display quality
+    # We store ALL points (even poor accuracy) for proof-of-life detection,
+    # but only return good-accuracy points (≤ 60m) to the map for a clean trail.
     locations = frappe.get_all("Location Log",
         filters=[
             ["employee", "in", employee_names],
-            ["timestamp", "between", [overall_start, overall_end]]
+            ["timestamp", "between", [overall_start, overall_end]],
+            ["accuracy", "<=", 60],  # ✅ Only display-quality points on map
         ],
-        fields=["employee", "latitude", "longitude", "timestamp", "branch_unit"],
+        fields=["employee", "latitude", "longitude", "timestamp", "branch_unit", "custom_accuracy"],
         order_by="employee, timestamp asc"
     )
 
@@ -1973,6 +2038,7 @@ def get_filtered_historical_paths_with_sql(date, department=None, branch=None, c
             l.longitude, 
             l.timestamp, 
             l.custom_activity, 
+            l.accuracy,
             bu.geofence_vertices 
         FROM `tabLocation Log` l 
         JOIN `tabEmployee` e ON e.name = l.employee 
@@ -2038,7 +2104,8 @@ def get_filtered_historical_paths_with_sql(date, department=None, branch=None, c
             "latitude": float(r.latitude),
             "longitude": float(r.longitude),
             "timestamp": str(r.timestamp),
-            "custom_activity": r.custom_activity
+            "custom_activity": r.custom_activity,
+            "accuracy": float(r.accuracy) if r.accuracy is not None else None,
         })
 
     # 2. Process, Clean, Simplify, and Smooth the Data
@@ -2046,7 +2113,10 @@ def get_filtered_historical_paths_with_sql(date, department=None, branch=None, c
     
     for emp_id, data in grouped_data.items():
         raw_points = data["raw_points"]
-        
+        raw_points = [
+        pt for pt in raw_points
+            if pt["accuracy"] is not None and pt["accuracy"] <= 40
+        ]
         # Step A: Basic deduplication (minimum 5 meters between points)
         cleaned_points = []
         last_pt = None
@@ -2307,12 +2377,6 @@ def validate_device_on_login(login_manager):
         )
 
 
-# =============================================================================
-# LOCATION HEALTH CHECKS  (Scheduled every 30 minutes via hooks.py)
-# Task 1 — Ping employees silent for 3+ hours during an active shift
-# Task 2 — Auto-checkout if tracking died within 60 mins of shift end
-# =============================================================================
-
 def _resolve_shift_end_dt(shift_start, shift_end, date_str):
     """
     Returns a naive datetime for shift end given timedelta or string values.
@@ -2348,19 +2412,20 @@ def run_location_health_checks():
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Location Health: Ping Task Failed")
 
-# Task 1 — Ping employees whose location logs are not coming
-# -----------------------------------------------------------------------------
 
 def _ping_silent_employees():
     now_dt = get_local_now()
     today_str = now_dt.strftime("%Y-%m-%d")
     today_start = today_str + " 00:00:00"
     tomorrow_start = (datetime.strptime(today_str, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d") + " 00:00:00"
-    silence_threshold = now_dt - timedelta(hours=2)
+
+    # 15 min: app sends points every 30s regardless of GPS accuracy.
+    # If silent for 15 min → app was definitely force-killed.
+    silence_threshold = now_dt - timedelta(minutes=15)
 
     # Step 1: Fetch all checkins for the day (fast single table read)
     checkins = frappe.db.sql("""
-        SELECT employee, log_type, time, custom_face_checkin_or_checkout
+        SELECT employee, log_type, time, custom_face_checkin_or_checkout, custom_geofence_in_or_out
         FROM `tabEmployee Checkin`
         WHERE time >= %(today_start)s AND time < %(tomorrow_start)s
           AND docstatus = 0
@@ -2377,13 +2442,14 @@ def _ping_silent_employees():
             emp_checkins[c.employee] = []
         emp_checkins[c.employee].append(c)
 
-    # Find eligible employees (First is Face IN, Last is IN)
+    # Find eligible employees (First is Face IN, Last is IN or Geofence OUT)
     eligible_emps = []
     for emp, logs in emp_checkins.items():
         first_log = logs[0]
         last_log = logs[-1]
         if first_log.log_type == 'IN' and first_log.custom_face_checkin_or_checkout:
-            if last_log.log_type == 'IN':
+            # If tracking should still be active (Last log is IN, or it's a Geofence OUT)
+            if last_log.log_type == 'IN' or (last_log.log_type == 'OUT' and last_log.custom_geofence_in_or_out == 1):
                 eligible_emps.append(emp)
 
     if not eligible_emps:
@@ -2428,10 +2494,19 @@ def _ping_silent_employees():
         shift_start_dt = (base + shift_info.start_time) if isinstance(shift_info.start_time, timedelta) \
                          else get_datetime(f"{today_str} {shift_info.start_time}")
 
-        # Only check employees whose shift is currently active
-        if shift_start_dt <= now_dt <= shift_end_dt:
+        emp_logs = emp_checkins.get(emp, [])
+        last_log_type = emp_logs[-1].log_type if emp_logs else None
+        
+        if last_log_type == 'IN':
+            # Still checked in — extend monitoring window to match the 8hr auto-checkout backstop
+            window_end = shift_end_dt + timedelta(hours=8)
+        else:
+            # Already legitimately OUT — no reason to keep watching past shift end
+            window_end = shift_end_dt
+        
+        if shift_start_dt <= now_dt <= window_end:
             active_shift_emps.append(emp)
-
+       
     if not active_shift_emps:
         return
 
@@ -2453,52 +2528,87 @@ def _ping_silent_employees():
     silent_emps = []
     for emp in active_shift_emps:
         last_time = loc_times.get(emp)
-        # If no log today, or log is older than 2 hours
+        # No log today, or last log is older than silence_threshold (15 min)
         if not last_time or get_datetime(str(last_time)) < silence_threshold:
             silent_emps.append(emp)
 
     if not silent_emps:
         return
 
-    # Step 4: Check ping counts for silent employees
-    ping_counts = {}
-    for r in frappe.db.sql("""
-        SELECT send_to_employee, COUNT(*) AS cnt
-        FROM `tabApp Push Notification`
-        WHERE title = '📍 Attendance Tracking Alert'
-          AND creation >= %(today_start)s
-          AND creation < %(tomorrow_start)s
-          AND send_to_employee IN %(emps)s
-        GROUP BY send_to_employee
-    """, {
-        "today_start": today_start,
-        "tomorrow_start": tomorrow_start,
-        "emps": tuple(silent_emps)
-    }):
-        ping_counts[r[0]] = r[1]
-
-    # Step 5: Send notifications
+    # Step 6: Log a geofence OUT (if needed) + send notification for each silent employee
     sent = 0
+    geofence_outs_logged = 0
     for emp in silent_emps:
-        if ping_counts.get(emp, 0) >= 2:
-            continue
-            
-        try:
-            notif = frappe.new_doc("App Push Notification")
-            notif.title            = "📍 Attendance Tracking Alert"
-            notif.content          = "Your location hasn't been updated in 2 hours. Please open the app to keep tracking active."
-            notif.send_to_employee = emp
-            notif.insert(ignore_permissions=True)
-            notif.submit()
-            ping_counts[emp] = ping_counts.get(emp, 0) + 1
-            sent += 1
-        except Exception:
-            frappe.log_error(frappe.get_traceback(), f"Location Health: Ping failed for {emp}")
+        emp_logs = emp_checkins.get(emp, [])
+        last_log = emp_logs[-1] if emp_logs else None
 
-    if sent > 0:
-        frappe.log_error(f"Sent {sent} silent-tracker ping notifications.", "Location Health: Ping Success")
-    else:
-        frappe.log_error(f"Ping Tracker ran successfully. Found {len(silent_emps)} silent employees, but they already reached their daily ping limit (max 2).", "Location Health: Ping Status")
+        if last_log and last_log.log_type == 'IN':
+            # --- 6a. Create a health-flag geofence OUT ---
+            try:
+                last_loc_time = loc_times.get(emp)
+                out_time = get_datetime(str(last_loc_time)) if last_loc_time else now_dt
+
+                # Prevent backdating the OUT log to before the manual IN log
+                last_in_time = last_log.time if last_log else None
+                if last_in_time and out_time < get_datetime(str(last_in_time)):
+                    out_time = get_datetime(str(last_in_time)) + timedelta(seconds=1)
+
+                flag_checkin = frappe.new_doc("Employee Checkin")
+                flag_checkin.employee              = emp
+                flag_checkin.log_type              = "OUT"
+                flag_checkin.time                  = out_time
+                flag_checkin.custom_geofence_in_or_out = 1   # Geofence-style log
+                flag_checkin.custom_health_flag = 1        # ← Marks it as server-generated
+                flag_checkin.custom_face_checkin_or_checkout = 0
+                flag_checkin.insert(ignore_permissions=True)
+                flag_checkin.add_comment(
+                    "Comment",
+                    text="Auto-flagged OUT: Location tracking stopped (app possibly force-killed). "
+                         "This record will be auto-removed if retroactive location logs confirm presence."
+                )
+                geofence_outs_logged += 1
+
+
+            except Exception:
+                frappe.log_error(frappe.get_traceback(), f"Location Health: Could not log health-flag OUT for {emp}")
+
+            # --- 6b. Send push notification for IN to OUT transition ---
+            try:
+                notif = frappe.new_doc("App Push Notification")
+                notif.title            = "📍 Attendance Tracking Alert"
+                notif.content = "An OUT log was recorded because tracking stopped. The app may have been killed or your phone went offline. Please open the app. If offline logs confirm your presence, the OUT log will be removed automatically."
+                notif.send_to_employee = emp
+                notif.insert(ignore_permissions=True)
+                notif.submit()
+                sent += 1
+            except Exception:
+                frappe.log_error(frappe.get_traceback(), f"Location Health: Ping failed for {emp}")
+
+        elif last_log and last_log.log_type == 'OUT':
+            
+            cache_key = f"silence_notif_count:{emp}:{today_str}"
+            current_count = frappe.utils.cint(frappe.cache().get_value(cache_key) or 0)
+            if current_count >= 2:
+                continue
+            try:
+                notif = frappe.new_doc("App Push Notification")
+                notif.title            = "📍 Tracking Suspended Alert"
+                notif.content = "Your background tracking has stopped while you are outside the work zone. Please open the app so your automatic check-in works when you return."
+                notif.send_to_employee = emp
+                notif.insert(ignore_permissions=True)
+                notif.submit()
+                sent += 1
+                frappe.cache().set_value(cache_key, current_count + 1, expires_in_sec=86400)
+            except Exception:
+                frappe.log_error(frappe.get_traceback(), f"Location Health: Ping failed for {emp}")
+
+    frappe.log_error(
+        f"Location Health Check complete. "
+        f"Silent employees: {len(silent_emps)}. "
+        f"Health-flag OUTs logged: {geofence_outs_logged}. "
+        f"Notifications sent: {sent}.",
+        "Location Health: Run Summary"
+    )
 
 
 
