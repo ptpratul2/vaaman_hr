@@ -10,7 +10,8 @@
   "latitude",
   "longitude",
   "branch_unit",
-  "map"
+  "map",
+  "accuracy"
  ],
  "fields": [
   {
@@ -46,12 +47,17 @@
    "fieldname": "map",
    "fieldtype": "Geolocation",
    "label": "Map"
+  },
+  {
+   "fieldname": "accuracy",
+   "fieldtype": "Float",
+   "label": "Accuracy"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-11-29 11:38:33.785987",
+ "modified": "2026-08-18 12:23:22.782548",
  "modified_by": "Administrator",
  "module": "Vaaman Hr",
  "name": "Location Log",
