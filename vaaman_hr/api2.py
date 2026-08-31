@@ -310,7 +310,7 @@ def mark_attendance(
     checkin.custom_face_checkin_or_checkout = 0 if int(is_click_and_go) else 1
 
     checkin.custom_geofence_in_or_out = 0
-    checkin.custom_outdoor_duty = custom_outdoor_duty
+    checkin.custom_outdoor_duty = 1 if str(custom_outdoor_duty).lower() in ["true", "1", "yes"] else 0
 
     checkin.insert()
 
@@ -2553,10 +2553,25 @@ def _ping_silent_employees():
                 if last_in_time and out_time < get_datetime(str(last_in_time)):
                     out_time = get_datetime(str(last_in_time)) + timedelta(seconds=1)
 
+                lat = 0.0
+                lon = 0.0
+                if last_loc_time:
+                    detail = frappe.db.sql("""
+                        SELECT latitude, longitude 
+                        FROM `tabLocation Log`
+                        WHERE employee = %s AND timestamp = %s
+                        LIMIT 1
+                    """, (emp, last_loc_time), as_dict=True)
+                    if detail:
+                        lat = detail[0].latitude
+                        lon = detail[0].longitude
+
                 flag_checkin = frappe.new_doc("Employee Checkin")
                 flag_checkin.employee              = emp
                 flag_checkin.log_type              = "OUT"
                 flag_checkin.time                  = out_time
+                flag_checkin.latitude              = lat
+                flag_checkin.longitude             = lon
                 flag_checkin.custom_geofence_in_or_out = 1   # Geofence-style log
                 flag_checkin.custom_health_flag = 1        # ← Marks it as server-generated
                 flag_checkin.custom_face_checkin_or_checkout = 0
