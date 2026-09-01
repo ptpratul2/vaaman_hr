@@ -2419,9 +2419,9 @@ def _ping_silent_employees():
     today_start = today_str + " 00:00:00"
     tomorrow_start = (datetime.strptime(today_str, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d") + " 00:00:00"
 
-    # 15 min: app sends points every 30s regardless of GPS accuracy.
+    # 30 min: app sends points every 30s regardless of GPS accuracy.
     # If silent for 15 min → app was definitely force-killed.
-    silence_threshold = now_dt - timedelta(minutes=15)
+    silence_threshold = now_dt - timedelta(minutes=30)
 
     # Step 1: Fetch all checkins for the day (fast single table read)
     checkins = frappe.db.sql("""
