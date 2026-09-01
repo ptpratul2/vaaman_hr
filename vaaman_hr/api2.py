@@ -2400,7 +2400,6 @@ def _resolve_shift_end_dt(shift_start, shift_end, date_str):
     except Exception:
         return None
 
-
 @frappe.whitelist()
 def run_location_health_checks():
     """
@@ -2506,7 +2505,7 @@ def _ping_silent_employees():
         
         if shift_start_dt <= now_dt <= window_end:
             active_shift_emps.append(emp)
-       
+        
     if not active_shift_emps:
         return
 
@@ -2543,7 +2542,19 @@ def _ping_silent_employees():
         last_log = emp_logs[-1] if emp_logs else None
 
         if last_log and last_log.log_type == 'IN':
-            # --- 6a. Create a health-flag geofence OUT ---
+            # Bulletproof DB check to avoid spamming if OUT insertion fails
+            in_alert_count = frappe.db.count(
+                "App Push Notification",
+                filters={
+                    "send_to_employee": emp,
+                    "title": "📍 Attendance Tracking Alert",
+                    "creation": (">=", today_start)
+                }
+            )
+            
+            if in_alert_count >= 1:
+                continue
+                
             try:
                 last_loc_time = loc_times.get(emp)
                 out_time = get_datetime(str(last_loc_time)) if last_loc_time else now_dt
@@ -2573,7 +2584,7 @@ def _ping_silent_employees():
                 flag_checkin.latitude              = lat
                 flag_checkin.longitude             = lon
                 flag_checkin.custom_geofence_in_or_out = 1   # Geofence-style log
-                flag_checkin.custom_health_flag = 1        # ← Marks it as server-generated
+                flag_checkin.custom_health_flag = 1        # Marks it as server-generated
                 flag_checkin.custom_face_checkin_or_checkout = 0
                 flag_checkin.insert(ignore_permissions=True)
                 flag_checkin.add_comment(
@@ -2583,37 +2594,42 @@ def _ping_silent_employees():
                 )
                 geofence_outs_logged += 1
 
+                # Send push notification only if insert succeeds
+                notif = frappe.new_doc("App Push Notification")
+                notif.title            = "📍 Attendance Tracking Alert"
+                notif.content          = "An OUT log was recorded because tracking stopped. The app may have been killed or your phone went offline. Please open the app. If offline logs confirm your presence, the OUT log will be removed automatically."
+                notif.send_to_employee = emp
+                notif.insert(ignore_permissions=True)
+                notif.submit()
+                sent += 1
 
             except Exception:
                 frappe.log_error(frappe.get_traceback(), f"Location Health: Could not log health-flag OUT for {emp}")
 
-            # --- 6b. Send push notification for IN to OUT transition ---
-            try:
-                notif = frappe.new_doc("App Push Notification")
-                notif.title            = "📍 Attendance Tracking Alert"
-                notif.content = "An OUT log was recorded because tracking stopped. The app may have been killed or your phone went offline. Please open the app. If offline logs confirm your presence, the OUT log will be removed automatically."
-                notif.send_to_employee = emp
-                notif.insert(ignore_permissions=True)
-                notif.submit()
-                sent += 1
-            except Exception:
-                frappe.log_error(frappe.get_traceback(), f"Location Health: Ping failed for {emp}")
-
         elif last_log and last_log.log_type == 'OUT':
             
-            cache_key = f"silence_notif_count:{emp}:{today_str}"
-            current_count = frappe.utils.cint(frappe.cache().get_value(cache_key) or 0)
-            if current_count >= 2:
+            # Bulletproof DB check: Count notifications already sent today
+            out_alert_count = frappe.db.count(
+                "App Push Notification",
+                filters={
+                    "send_to_employee": emp,
+                    "title": "📍 Tracking Suspended Alert",
+                    "creation": (">=", today_start)
+                }
+            )
+            
+            # Stop if we already sent 1 alert today
+            if out_alert_count >= 1:
                 continue
+
             try:
                 notif = frappe.new_doc("App Push Notification")
                 notif.title            = "📍 Tracking Suspended Alert"
-                notif.content = "Your background tracking has stopped while you are outside the work zone. Please open the app so your automatic check-in works when you return."
+                notif.content          = "Your background tracking has stopped while you are outside the work zone. Please open the app so your automatic check-in works when you return."
                 notif.send_to_employee = emp
                 notif.insert(ignore_permissions=True)
                 notif.submit()
                 sent += 1
-                frappe.cache().set_value(cache_key, current_count + 1, expires_in_sec=86400)
             except Exception:
                 frappe.log_error(frappe.get_traceback(), f"Location Health: Ping failed for {emp}")
 
@@ -2624,7 +2640,6 @@ def _ping_silent_employees():
         f"Notifications sent: {sent}.",
         "Location Health: Run Summary"
     )
-
 
 
 @frappe.whitelist()
