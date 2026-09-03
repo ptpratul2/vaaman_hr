@@ -42,5 +42,11 @@ def apply_monkey_patch(app_name=None):
 
     apply_comp_off_balance_patch()
 
+    from vaaman_hr.overrides.salary_structure_assignment import (
+        apply_salary_structure_assignment_patch,
+    )
+
+    apply_salary_structure_assignment_patch()
+
 # Ensure the patch is applied at the appropriate point in your application
 apply_monkey_patch()

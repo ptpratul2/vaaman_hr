@@ -281,7 +281,25 @@ class CustomSalarySlip(ERPNextSalarySlip):
             data.joining_date = joining_date
             default_data.joining_date = joining_date
         return data, default_data
-    
+
+    def add_structure_components(self, component_type):
+        super().add_structure_components(component_type)
+        if component_type != "earnings":
+            return
+
+        # Statistical components aren't saved as slip rows, so capture PAID DAYS here (falls back to PAYMENT DAYS below).
+        value = self._get_structure_component_value(component_type, "PAID DAYS")
+        if value is None:
+            value = self._get_structure_component_value(component_type, "PAYMENT DAYS")
+        self.custom_paid_days = value or 0
+
+    def _get_structure_component_value(self, component_type, component_name):
+        # self.data defaults every component abbr to 0, so check the structure's rows instead to detect presence.
+        for struct_row in self._evaluated_components[component_type]:
+            if struct_row.salary_component == component_name:
+                return self.data.get(struct_row.abbr, 0)
+        return None
+
     def _count_payable_attendance_days(
         self,
         attendance_by_date,
