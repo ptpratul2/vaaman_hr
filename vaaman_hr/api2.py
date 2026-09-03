@@ -2406,6 +2406,8 @@ def run_location_health_checks():
     Entry point called by Frappe scheduler every 2 minutes (test) / 30 minutes (prod).
     Pings employees whose location logs have stopped coming.
     """
+    frappe.log_error("Function triggered and returned early", "run_location_health_checks disabled")
+    return
     try:
         _ping_silent_employees()
     except Exception:
