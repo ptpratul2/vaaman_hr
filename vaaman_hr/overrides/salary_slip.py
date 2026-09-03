@@ -81,25 +81,24 @@ class CustomSalarySlip(ERPNextSalarySlip):
 
         for additional_salary in additional_salaries:
             component_data = get_salary_component_data(additional_salary.component)
-            remove_if_zero_valued = frappe.get_cached_value(
-                "Salary Component", additional_salary.component, "remove_if_zero_valued"
-            )
-            # if flt(additional_salary.amount) == 0 and remove_if_zero_valued:
-            # 	continue
+            # Keep zero Additional Salary rows so overwrite-to-0 can replace the
+            # structure amount. Core HRMS skips these when remove_if_zero_valued.
             self.update_component_row(
                 component_data,
                 additional_salary.amount,
                 component_type,
                 additional_salary,
                 is_recurring=additional_salary.is_recurring,
+                remove_if_zero_valued=frappe.get_cached_value(
+                    "Salary Component", additional_salary.component, "remove_if_zero_valued"
+                ),
             )
 
             if component_type == "earnings" and hasattr(self, "benefit_ledger_components"):
                 if (
                     additional_salary.ref_doctype == "Employee Benefit Claim"
-                    and component_data.is_flexible_benefit
-                ) or component_data.accrual_component:
-                    # track benefit claim or accrual component payout to record in Employee Benefit Ledger
+                    and component_data.get("is_flexible_benefit")
+                ) or component_data.get("accrual_component"):
                     if additional_salary.ref_doctype == "Employee Benefit Claim":
                         remarks = f"Payout against Employee Benefit Claim {additional_salary.ref_docname}"
                         flexible_benefit = 1
@@ -155,10 +154,12 @@ class CustomSalarySlip(ERPNextSalarySlip):
             )
 
         if not component_row:
-            if not (amount or default_amount) and remove_if_zero_valued:
+            overwrite_to_zero = additional_salary and additional_salary.overwrite and flt(amount) == 0
+            if not (amount or default_amount) and remove_if_zero_valued and not overwrite_to_zero:
                 return
 
             component_row = self.append(component_type)
+            salary_detail_meta = frappe.get_meta("Salary Detail")
             for attr in (
                 "depends_on_payment_days",
                 "salary_component",
@@ -171,7 +172,8 @@ class CustomSalarySlip(ERPNextSalarySlip):
                 "variable_based_on_taxable_salary",
                 "exempted_from_income_tax",
             ):
-                component_row.set(attr, component_data.get(attr))
+                if salary_detail_meta.has_field(attr):
+                    component_row.set(attr, component_data.get(attr))
 
         if additional_salary:
             if additional_salary.overwrite:
@@ -197,30 +199,19 @@ class CustomSalarySlip(ERPNextSalarySlip):
 
         component_row.amount = amount
 
-        # Skip payment days adjustment for:
-        # 1. Arrear/Payroll Correction additional salary - already calculated based on LWP days in previous cycles
-        # 2. Employee Benefit Claim - payout often includes amount for previous cycles
-        # 2. Accrual components - paid based on accrual amounts from previous cycles
-        
-        
-        
-        # skip_payment_days_adjustment = (
-        # 	additional_salary
-        # 	and additional_salary.get("ref_doctype")
-        # 	in ["Arrear", "Payroll Correction", "Employee Benefit Claim"]
-        # ) or component_row.accrual_component
+        # Skip payment days so:
+        # - Additional Salary overwrite of 0 stays 0 (core would treat blank amount
+        #   as additional_amount and also drop the row when remove_if_zero_valued)
+        # - Arrear / Payroll Correction / Benefit Claim amounts are already final
+        # - Accrual components (HRMS v16+) are paid from prior-cycle accruals
         skip_payment_days_adjustment = (
-            (
-                additional_salary
-                and additional_salary.overwrite
-                and flt(amount) == 0
-            )
-           or (
+            (additional_salary and additional_salary.overwrite and flt(amount) == 0)
+            or (
                 additional_salary
                 and additional_salary.get("ref_doctype")
                 in ["Arrear", "Payroll Correction", "Employee Benefit Claim"]
             )
-            or component_row.accrual_component
+            or component_row.get("accrual_component")
         )
 
         if not skip_payment_days_adjustment:
