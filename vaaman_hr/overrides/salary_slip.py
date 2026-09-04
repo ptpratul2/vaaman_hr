@@ -286,7 +286,12 @@ class CustomSalarySlip(ERPNextSalarySlip):
 
     def _get_structure_component_value(self, component_type, component_name):
         # self.data defaults every component abbr to 0, so check the structure's rows instead to detect presence.
-        for struct_row in self._evaluated_components[component_type]:
+        # HRMS v16 stores evaluated rows on _evaluated_components; v15 uses the structure doc.
+        evaluated = getattr(self, "_evaluated_components", None)
+        rows = evaluated.get(component_type) if evaluated else None
+        if not rows and getattr(self, "_salary_structure_doc", None):
+            rows = self._salary_structure_doc.get(component_type)
+        for struct_row in rows or []:
             if struct_row.salary_component == component_name:
                 return self.data.get(struct_row.abbr, 0)
         return None
