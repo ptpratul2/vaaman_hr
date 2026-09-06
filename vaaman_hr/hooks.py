@@ -76,6 +76,7 @@ after_migrate = [
     "vaaman_hr.vaaman_hr.update_field_options.update_attendance_status_options",
     "vaaman_hr.vaaman_hr.update_field_options.update_attendance_request_reason_options",
     "vaaman_hr.vaaman_hr.update_field_options.update_attendance_request_custom_fields",
+    "vaaman_hr.vaaman_hr.update_field_options.allow_salary_structure_assignment_fields_on_submit",
 ]
 
 

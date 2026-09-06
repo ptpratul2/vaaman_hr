@@ -50,6 +50,25 @@ def update_attendance_request_custom_fields():
     })
 
 
+def allow_salary_structure_assignment_fields_on_submit():
+    """Allow all Salary Structure Assignment custom fields to be edited after submit."""
+    for field in frappe.get_all(
+        "Custom Field",
+        filters={"dt": "Salary Structure Assignment"},
+        fields=["name", "fieldname"],
+    ):
+        frappe.db.set_value("Custom Field", field.name, "allow_on_submit", 1, update_modified=False)
+        make_property_setter(
+            "Salary Structure Assignment",
+            field.fieldname,
+            "allow_on_submit",
+            "1",
+            "Check",
+            validate_fields_for_doctype=False,
+        )
+    frappe.clear_cache(doctype="Salary Structure Assignment")
+
+
 def update_attendance_status_options():
     set_select_options(
         "Attendance",
