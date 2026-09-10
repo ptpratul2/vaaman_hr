@@ -230,10 +230,10 @@
         "doctype": "Custom Field",
         "dt": "Salary Structure Assignment",
         "module": "Vaaman Hr",
-        "name": "Salary Structure Assignment-custom_calculate_pph",
-        "fieldname": "custom_calculate_pph",
+        "name": "Salary Structure Assignment-custom_staff_ot",
+        "fieldname": "custom_staff_ot",
         "fieldtype": "Check",
-        "label": "Calculate PPH",
+        "label": "Staff OT",
         "insert_after": "custom_restricted_pf",
         "__islocal": 1,
         "allow_on_submit": 1
