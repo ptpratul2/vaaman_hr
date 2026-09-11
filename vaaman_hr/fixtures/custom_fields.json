@@ -393,18 +393,6 @@
         "doctype_or_field": "DocField",
         "doc_type": "Salary Structure Assignment",
         "module": "Vaaman Hr",
-        "field_name": "custom_calculate_pph",
-        "property": "allow_on_submit",
-        "value": "1",
-        "property_type": "Check",
-        "__islocal": 1,
-        "name": "Salary Structure Assignment-custom_calculate_pph-allow_on_submit"
-    },
-    {
-        "doctype": "Property Setter",
-        "doctype_or_field": "DocField",
-        "doc_type": "Salary Structure Assignment",
-        "module": "Vaaman Hr",
         "field_name": "custom_basic_daily_rate",
         "property": "allow_on_submit",
         "value": "1",

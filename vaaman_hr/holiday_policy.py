@@ -169,18 +169,18 @@ def process_holiday_sandwich_policy():
 				}).insert(ignore_permissions=True)
 				frappe.db.commit()
 
-				# Notify employee
-				if employee.user_id:
-					frappe.sendmail(
-						recipients=[employee.user_id],
-						subject="Attendance Policy — Holiday/Weekly Off Marked as Absent",
-						message=(
-							f"Your {original_status} on {holiday_date} has been marked as Absent "
-							f"because you were absent on {day_before_date} (day before) "
-							f"and {day_after_date} (day after), "
-							f"as per the company attendance policy."
-						)
-					)
+				# # Notify employee
+				# if employee.user_id:
+				# 	frappe.sendmail(
+				# 		recipients=[employee.user_id],
+				# 		subject="Attendance Policy — Holiday/Weekly Off Marked as Absent",
+				# 		message=(
+				# 			f"Your {original_status} on {holiday_date} has been marked as Absent "
+				# 			f"because you were absent on {day_before_date} (day before) "
+				# 			f"and {day_after_date} (day after), "
+				# 			f"as per the company attendance policy."
+				# 		)
+				# 	)
 
 				# Update att_map so cascading sandwiches in the same run are also detected
 				emp_att[d1] = frappe._dict({
