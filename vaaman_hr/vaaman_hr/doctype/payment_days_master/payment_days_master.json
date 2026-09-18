@@ -1,0 +1,71 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-08-20 21:40:29.671556",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "branch",
+  "staffworker",
+  "working_days_formula",
+  "payment_days_formula",
+  "is_active"
+ ],
+ "fields": [
+  {
+   "fieldname": "branch",
+   "fieldtype": "Link",
+   "label": "Branch",
+   "options": "Branch"
+  },
+  {
+   "fieldname": "staffworker",
+   "fieldtype": "Select",
+   "label": "Staff/Worker",
+   "options": "\nStaff\nWorker"
+  },
+  {
+   "fieldname": "working_days_formula",
+   "fieldtype": "Code",
+   "label": "Working Days Formula"
+  },
+  {
+   "fieldname": "payment_days_formula",
+   "fieldtype": "Code",
+   "label": "Payment Days Formula"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "label": "Is Active"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-08-20 21:46:46.494150",
+ "modified_by": "Administrator",
+ "module": "Vaaman Hr",
+ "name": "Payment Days Master",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

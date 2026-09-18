@@ -12,7 +12,7 @@ app_license = "mit"
 # ------------------
 
 # include js, css files in header of desk.html
-# app_include_css = "/assets/vaaman_hr/css/vaaman_hr.css"
+app_include_css = "/assets/vaaman_hr/css/payment_days.css"
 # app_include_js = "/assets/vaaman_hr/js/vaaman_hr.js"
 
 # include js, css files in header of web template
@@ -155,6 +155,9 @@ doc_events = {
     "Attendance": {
         "after_insert": "vaaman_hr.vaaman_hr.half_day_leaves.validate_half_day_attendance",
         "on_update": "vaaman_hr.vaaman_hr.half_day_leaves.reapply_half_day_attendance_on_update",
+    },
+    "Leave Application": {
+        "after_submit": "vaaman_hr.overrides.leave_application.update_other_half_on_half_day_leave",
     },
     "Employee Checkin": {
         "after_insert": "vaaman_hr.vaaman_hr.half_day_leaves.reapply_half_day_attendance_on_checkin",
