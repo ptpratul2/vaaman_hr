@@ -1,0 +1,9 @@
+[data-fieldname="working_days_formula"] .control-input {
+    height: 70px !important;
+}
+
+[data-fieldname="working_days_formula"] .ace_editor {
+    height: 70px !important;
+    min-height: 70px !important;
+    max-height: 70px !important;
+}
