@@ -260,6 +260,16 @@ class CustomSalarySlip(ERPNextSalarySlip):
 
         return bool(relieving_date and start_date <= relieving_date <= end_date)
 
+    def _set_days_zero_if_no_attendance(self, attendance_rows):
+        """ Set Payment Days, Absent Days and Public Holiday to 0
+        when no submitted Attendance records are available
+        for the salary period."""
+        if self.employee and not attendance_rows:
+            self.payment_days = 0
+            self.absent_days = 0
+            self.custom_public_holiday = 0
+
+
     def get_data_for_eval(self):
         data, default_data = super().get_data_for_eval()
         is_join_month = self._is_current_month_joining(
@@ -636,7 +646,17 @@ class CustomSalarySlip(ERPNextSalarySlip):
             if date in pph_holiday_dates and row.status in ("Present", "Half Day")
         )
         self.custom_public_holiday = len(pph_holiday_dates)
-
+        
+        # Weekly off on Holiday
+        self.custom_weekly_off_on_holiday = sum(
+            1
+            for date, row in attendance_by_date.items()
+            if date in pph_holiday_dates and row.status == "Weekly Off"
+        )
+        
+        
+        
+        
         self._set_custom_paid_leaves(
             period_start, period_end, daily_wages_fraction_for_half_day
         )
@@ -745,3 +765,5 @@ class CustomSalarySlip(ERPNextSalarySlip):
                     self.payment_days += lwp_days_corrected
             except ImportError:
                 pass
+        # Final override when no Attendance is available
+        self._set_days_zero_if_no_attendance(attendance_rows)

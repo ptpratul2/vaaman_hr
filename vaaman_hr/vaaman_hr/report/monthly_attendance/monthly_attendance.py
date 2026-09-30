@@ -1612,8 +1612,20 @@ def get_employee_related_details(filters: Filters) -> tuple[dict, list]:
             Employee.relieving_date,
 
         )
-        .where(Employee.company.isin(filters.companies))
+        # .where(Employee.company.isin(filters.companies))
+        .where(
+            (Employee.company.isin(filters.companies))
+            & (
+                (Employee.status != "Left")
+                | (
+                    (Employee.status == "Left")
+                    & (Employee.relieving_date >= f"{filters.year}-{filters.month}-01")
+                )
+            )
+        )
     )
+
+    
 
     if filters.employee:
         query = query.where(Employee.name == filters.employee)
