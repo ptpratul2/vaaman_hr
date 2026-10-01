@@ -1187,7 +1187,10 @@ leave_type_abbr = {
     "Leave Without Pay":"LWP"
     # Add more leave types as needed
 }
-
+abbr_to_leave_type = {
+    abbr: leave_type
+    for leave_type, abbr in leave_type_abbr.items()
+}
 
 def execute(filters: Filters | None = None) -> tuple:
     filters = frappe._dict(filters or {})
@@ -1933,11 +1936,22 @@ def get_attendance_status_for_detailed_view(
                             abbr = "HD/P/A"
                             t_a += 0.5
                     else:
+                        # if len(day_leaves) > 1:
+                        #     abbr = f"HD/{'/'.join(day_leaves)}"
+                        #     t_l += 1.0
+                        #     if lt_key: 
+                        #         row[lt_key] = row.get(lt_key, 0.0) + 1.0
                         if len(day_leaves) > 1:
                             abbr = f"HD/{'/'.join(day_leaves)}"
-                            t_l += 1.0
-                            if lt_key: 
-                                row[lt_key] = row.get(lt_key, 0.0) + 1.0
+                            
+                            # Two half-day leaves on the same date
+                            for leave_type in day_leaves:
+                                t_l += 0.5
+                                leave_name = abbr_to_leave_type.get(leave_type)
+
+                                if leave_name:
+                                    key = frappe.scrub(leave_name)
+                                    row[key] = row.get(key, 0.0) + 0.5
                 ###########################################################################        
                         elif has_punch:
                             if day_att.half_day_status == "Present":
