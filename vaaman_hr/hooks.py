@@ -233,7 +233,7 @@ doc_events = {
 
 scheduler_events = {
     "daily": [
-        "vaaman_hr.late_entry_atten.process_attendance_policy",
+        
         "vaaman_hr.vaaman_hr.salery_component_field_add_buttton.update_history"
     ],
     "cron": {
@@ -246,7 +246,11 @@ scheduler_events = {
         ],
         "30 8 * * *": [
            "vaaman_hr.api2.process_daily_auto_checkout" 
+        ],
+        "0 9 * * *": [
+            "vaaman_hr.late_entry_atten.process_attendance_policy"
         ]
+        
     }
 }
 
