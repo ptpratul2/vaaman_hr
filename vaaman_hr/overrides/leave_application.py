@@ -222,7 +222,26 @@ class CustomLeaveApplication(LeaveApplication):
                         },
                         update_modified=False,
                     )
-            
+                if doc.status == "Half Day" and doc.leave_application:
+                    half_day_leave_count = frappe.db.count(
+                        "Leave Application",
+                        filters={
+                            "employee": self.employee,
+                            "half_day": 1,
+                            "half_day_date": date,
+                            "docstatus": 1,
+                        },
+                    )
+                    if half_day_leave_count > 1:
+                        frappe.db.set_value(
+                            "Attendance",
+                            doc.name,
+                            {
+                                "half_day_status": "Present",
+                                "modify_half_day_status": 1,
+                            },
+                            update_modified=False,
+                        )
             # -----------------------------------------------------
             # OTHER BRANCHES
             # Keep existing behavior unchanged.
