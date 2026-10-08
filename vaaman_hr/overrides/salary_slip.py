@@ -268,6 +268,7 @@ class CustomSalarySlip(ERPNextSalarySlip):
             self.payment_days = 0
             self.absent_days = 0
             self.custom_public_holiday = 0
+            self.custom_ph_on_basic = 0
 
 
     def get_data_for_eval(self):
@@ -498,6 +499,7 @@ class CustomSalarySlip(ERPNextSalarySlip):
                 "override_weekly_off_with_absent",
                 "mark_absent_on_public_holiday",
                 "custom_current_month_joining",
+                "custom_mark_ph_on_basic",
                 "salary_structure",
             ],
             order_by="from_date desc",
@@ -514,6 +516,7 @@ class CustomSalarySlip(ERPNextSalarySlip):
             override_absent_on_holiday,
             mark_absent_on_public_holiday,
             current_month_joining,
+            mark_ph_on_basic,
             salary_structure,
         ) = ssa
 
@@ -525,6 +528,7 @@ class CustomSalarySlip(ERPNextSalarySlip):
 
         override_absent_on_holiday = cint(override_absent_on_holiday or 0)
         mark_absent_on_public_holiday = cint(mark_absent_on_public_holiday or 0)
+        mark_ph_on_basic = cint(mark_ph_on_basic or 0)
 
         if for_preview:
             total_days = (end_date - start_date).days + 1
@@ -581,6 +585,36 @@ class CustomSalarySlip(ERPNextSalarySlip):
             fields=["attendance_date", "status", "leave_type", "half_day_status"],
         )
         attendance_by_date = {getdate(row.attendance_date): row for row in attendance_rows}
+        # PH on Basic:
+        # Count only public holidays where no Attendance record exists.
+        ph_on_basic = 0
+
+        if mark_ph_on_basic:
+            ph_on_basic = sum(
+                1
+                for holiday_date in pph_holiday_dates
+                if holiday_date not in attendance_by_date
+            )
+
+        self.custom_ph_on_basic = ph_on_basic
+        
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
         # When current-month joiners/relievers use the full payroll month as working
         # days, days outside the employment period must still reduce payment days.
@@ -747,10 +781,10 @@ class CustomSalarySlip(ERPNextSalarySlip):
         if is_worker:
             self.payment_days = max(
                 0,
-                flt(self.total_working_days) - flt(self.absent_days) - flt(self.leave_without_pay),
+                flt(self.total_working_days) - flt(self.absent_days) - flt(self.leave_without_pay)- flt(self.custom_ph_on_basic),
             )
         else:
-            self.payment_days = max(0, flt(payable_days))
+            self.payment_days = max(0, flt(payable_days)- flt(self.custom_ph_on_basic))
             
         if HRMS_VERSION.major >= 16 and lwp_days_corrected and lwp_days_corrected > 0:
             try:
