@@ -6,6 +6,19 @@ app_publisher = "Pratul Tripathi"
 app_description = "Exended Feature for HR Module"
 app_email = "ptpratul2@gmail.com"
 app_license = "mit"
+
+# Shown on the apps / home screen, same pattern as Item Generator.
+add_to_apps_screen = [
+	{
+		"name": "vaaman_hr",
+		"logo": "/assets/hrms/icons/desktop_icons/subtle/people.svg",
+		"title": "Vaaman HR",
+		"route": "/app/vaaman-hr-dashboard",
+		"desk_route": "/desk/vaaman-hr",
+		"has_permission": "vaaman_hr.hr_dashboard.has_app_permission",
+	}
+]
+
 # required_apps = []
 
 # Includes in <head>
