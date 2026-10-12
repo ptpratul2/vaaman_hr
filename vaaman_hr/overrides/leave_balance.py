@@ -31,8 +31,9 @@ def get_leave_balance_on(
 	to_date=None,
 	consider_all_leaves_in_the_allocation_period: bool = False,
 	for_consumption: bool = False,
+	leave_application: str | None = None,
 ):
-	validate_leave_access(employee)
+	validate_leave_access(employee, leave_application)
 
 	if is_compensatory_off(leave_type):
 		return get_comp_off_balance_on(
@@ -49,12 +50,18 @@ def get_leave_balance_on(
 		to_date=to_date,
 		consider_all_leaves_in_the_allocation_period=consider_all_leaves_in_the_allocation_period,
 		for_consumption=for_consumption,
+		leave_application=leave_application,
 	)
 
 
 @frappe.whitelist()
-def get_leave_details(employee: str, date, for_salary_slip: bool = False) -> dict:
-	validate_leave_access(employee)
+def get_leave_details(
+	employee: str,
+	date,
+	for_salary_slip: bool = False,
+	leave_application: str | None = None,
+) -> dict:
+	validate_leave_access(employee, leave_application)
 
 	allocation_records = get_leave_allocation_records(employee, date)
 	leave_allocation = {}
@@ -74,6 +81,7 @@ def get_leave_details(employee: str, date, for_salary_slip: bool = False) -> dic
 			date,
 			to_date=to_date,
 			consider_all_leaves_in_the_allocation_period=False if for_salary_slip else True,
+			leave_application=leave_application,
 		)
 
 		leaves_taken = get_leaves_for_period(employee, leave_type, allocation.from_date, to_date) * -1
