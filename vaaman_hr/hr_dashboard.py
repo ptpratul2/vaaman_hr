@@ -111,7 +111,9 @@ def get_dashboard_stats(filters=None):
 			att.attendance_date AS date,
 			SUM(CASE WHEN att.status = 'Present' THEN 1 ELSE 0 END) AS present,
 			SUM(CASE WHEN att.status = 'Absent' THEN 1 ELSE 0 END) AS absent,
-			SUM(CASE WHEN att.status = 'On Leave' THEN 1 ELSE 0 END) AS on_leave
+			SUM(CASE WHEN att.status = 'On Leave' THEN 1 ELSE 0 END) AS on_leave,
+			SUM(CASE WHEN att.status = 'Half Day' THEN 1 ELSE 0 END) AS half_day,
+			SUM(CASE WHEN att.late_entry = 1 THEN 1 ELSE 0 END) AS late_entry
 		FROM `tabAttendance` att
 		INNER JOIN `tabEmployee` emp ON emp.name = att.employee
 		WHERE att.docstatus = 1
@@ -164,6 +166,36 @@ def get_dashboard_stats(filters=None):
 			as_dict=True,
 		)
 
+	leave_by_status = frappe.db.sql(
+		f"""
+		SELECT la.status AS label, COUNT(*) AS value
+		FROM `tabLeave Application` la
+		INNER JOIN `tabEmployee` emp ON emp.name = la.employee
+		WHERE la.docstatus < 2
+			AND la.from_date <= %s
+			AND la.to_date >= %s
+			{emp_sql}
+		GROUP BY la.status
+		ORDER BY value DESC
+		""",
+		[filters.to_date, filters.from_date, *emp_values],
+		as_dict=True,
+	)
+
+	headcount_by_department = frappe.db.sql(
+		f"""
+		SELECT IFNULL(NULLIF(emp.department, ''), 'Not Set') AS label, COUNT(*) AS value
+		FROM `tabEmployee` emp
+		WHERE emp.status = 'Active'
+			{emp_sql}
+		GROUP BY label
+		ORDER BY value DESC
+		LIMIT 10
+		""",
+		emp_values,
+		as_dict=True,
+	)
+
 	by_status = [
 		{"label": status, "value": cint(attendance.get(status))}
 		for status in ATTENDANCE_STATUSES
@@ -188,6 +220,8 @@ def get_dashboard_stats(filters=None):
 		"by_status": by_status,
 		"timeline": timeline,
 		"leave_by_type": leave_by_type,
+		"leave_by_status": leave_by_status,
+		"headcount_by_department": headcount_by_department,
 		"by_department": breakdown("department"),
 		"by_branch": breakdown("branch"),
 		"by_company": breakdown("company"),

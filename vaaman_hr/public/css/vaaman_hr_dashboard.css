@@ -88,13 +88,21 @@
 .vaaman-hr-dashboard .vhr-kpi-grid {
 	display: grid;
 	grid-template-columns: repeat(4, minmax(0, 1fr));
+	grid-auto-rows: 104px;
 	gap: 12px;
 	margin-bottom: 24px;
 }
 
 .vaaman-hr-dashboard .vhr-kpi {
+	height: 104px;
+	min-height: 104px;
+	max-height: 104px;
 	padding: 14px 16px;
-	min-height: 76px;
+	box-sizing: border-box;
+	display: flex;
+	flex-direction: column;
+	justify-content: space-between;
+	overflow: hidden;
 }
 
 .vaaman-hr-dashboard .vhr-kpi.alert {
@@ -102,15 +110,18 @@
 }
 
 .vaaman-hr-dashboard .vhr-kpi .label {
-	font-size: 11px;
+	font-size: 12px;
 	color: var(--text-muted);
-	margin-bottom: 6px;
+	line-height: 1.3;
+	height: 32px;
+	overflow: hidden;
 }
 
 .vaaman-hr-dashboard .vhr-kpi .value {
-	font-size: 22px;
+	font-size: 26px;
 	font-weight: 600;
-	line-height: 1.2;
+	line-height: 1;
+	font-variant-numeric: tabular-nums;
 }
 
 .vaaman-hr-dashboard .vhr-section-title {
@@ -124,16 +135,35 @@
 	grid-template-columns: repeat(2, minmax(0, 1fr));
 	gap: 16px;
 	margin-bottom: 20px;
+	align-items: stretch;
+}
+
+.vaaman-hr-dashboard .vhr-charts.vhr-tables {
+	grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .vaaman-hr-dashboard .vhr-chart-box,
 .vaaman-hr-dashboard .vhr-table-box {
 	padding: 16px;
-	min-height: 280px;
+	height: 340px;
+	min-height: 340px;
+	max-height: 340px;
+	box-sizing: border-box;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
 }
 
 .vaaman-hr-dashboard .vhr-chart-box .chart-container {
-	min-height: 220px;
+	flex: 1;
+	height: 270px;
+	min-height: 270px;
+	max-height: 270px;
+}
+
+.vaaman-hr-dashboard .vhr-table-wrap {
+	flex: 1;
+	overflow: auto;
 }
 
 .vaaman-hr-dashboard .vhr-table {
@@ -165,7 +195,8 @@
 
 @media (max-width: 1100px) {
 	.vaaman-hr-dashboard .vhr-kpi-grid,
-	.vaaman-hr-dashboard .vhr-charts {
+	.vaaman-hr-dashboard .vhr-charts,
+	.vaaman-hr-dashboard .vhr-charts.vhr-tables {
 		grid-template-columns: 1fr 1fr;
 	}
 }

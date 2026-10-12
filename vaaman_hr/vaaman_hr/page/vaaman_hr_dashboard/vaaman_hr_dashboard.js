@@ -58,16 +58,44 @@ class VaamanHrDashboard {
 						<div id="vhr-chart-status" class="chart-container"></div>
 					</div>
 					<div class="vhr-chart-box">
+						<div class="vhr-section-title">${__("Attendance Mix")}</div>
+						<div id="vhr-chart-mix" class="chart-container"></div>
+					</div>
+					<div class="vhr-chart-box">
 						<div class="vhr-section-title">${__("Attendance Over Time")}</div>
 						<div id="vhr-chart-timeline" class="chart-container"></div>
 					</div>
-					<div class="vhr-chart-box" style="grid-column: 1 / -1;">
+					<div class="vhr-chart-box">
+						<div class="vhr-section-title">${__("Late Entry Over Time")}</div>
+						<div id="vhr-chart-late" class="chart-container"></div>
+					</div>
+					<div class="vhr-chart-box">
+						<div class="vhr-section-title">${__("Present vs Absent by Department")}</div>
+						<div id="vhr-chart-department" class="chart-container"></div>
+					</div>
+					<div class="vhr-chart-box">
+						<div class="vhr-section-title">${__("Present vs Absent by Branch")}</div>
+						<div id="vhr-chart-branch" class="chart-container"></div>
+					</div>
+					<div class="vhr-chart-box">
+						<div class="vhr-section-title">${__("Active Employees by Department")}</div>
+						<div id="vhr-chart-headcount" class="chart-container"></div>
+					</div>
+					<div class="vhr-chart-box">
 						<div class="vhr-section-title">${__("Approved Leave by Type")}</div>
 						<div id="vhr-chart-leave" class="chart-container"></div>
 					</div>
+					<div class="vhr-chart-box">
+						<div class="vhr-section-title">${__("Leave Applications by Status")}</div>
+						<div id="vhr-chart-leave-status" class="chart-container"></div>
+					</div>
+					<div class="vhr-chart-box">
+						<div class="vhr-section-title">${__("Attendance Rate")}</div>
+						<div id="vhr-chart-rate" class="chart-container"></div>
+					</div>
 				</div>
 
-				<div class="vhr-charts">
+				<div class="vhr-charts vhr-tables">
 					<div class="vhr-table-box">
 						<div class="vhr-section-title">${__("By Department")}</div>
 						<div class="vhr-table-wrap vhr-table-department"></div>
@@ -76,7 +104,7 @@ class VaamanHrDashboard {
 						<div class="vhr-section-title">${__("By Branch")}</div>
 						<div class="vhr-table-wrap vhr-table-branch"></div>
 					</div>
-					<div class="vhr-table-box" style="grid-column: 1 / -1;">
+					<div class="vhr-table-box">
 						<div class="vhr-section-title">${__("By Company")}</div>
 						<div class="vhr-table-wrap vhr-table-company"></div>
 					</div>
@@ -235,9 +263,19 @@ class VaamanHrDashboard {
 				.join("")
 		);
 
+		const timeline = data.timeline || [];
 		this.render_chart("vhr-chart-status", data.by_status || [], "bar");
-		this.render_timeline(data.timeline || []);
+		this.render_chart("vhr-chart-mix", data.by_status || [], "donut");
+		this.render_timeline(timeline);
+		this.render_series("vhr-chart-late", timeline, [
+			{ name: __("Late Entry"), key: "late_entry", color: "#ed8936" },
+		], "line");
+		this.render_compare("vhr-chart-department", (data.by_department || []).slice(0, 8));
+		this.render_compare("vhr-chart-branch", (data.by_branch || []).slice(0, 8));
+		this.render_chart("vhr-chart-headcount", data.headcount_by_department || [], "bar");
 		this.render_chart("vhr-chart-leave", data.leave_by_type || [], "bar");
+		this.render_chart("vhr-chart-leave-status", data.leave_by_status || [], "donut");
+		this.render_rate(timeline);
 
 		const columns = [
 			{ key: "label", label: __("Name") },
@@ -260,10 +298,76 @@ class VaamanHrDashboard {
 		]);
 	}
 
+	short_label(value) {
+		const text = String(value || __("Not Set"));
+		return text.length > 22 ? `${text.slice(0, 20)}…` : text;
+	}
+
 	render_timeline(rows) {
-		const parent = this.wrapper.find("#vhr-chart-timeline")[0];
+		this.render_series(
+			"vhr-chart-timeline",
+			rows,
+			[
+				{ name: __("Present"), key: "present", color: "#38a169" },
+				{ name: __("Absent"), key: "absent", color: "#e53e3e" },
+				{ name: __("On Leave"), key: "on_leave", color: "#ed8936" },
+			],
+			rows.length === 1 ? "bar" : "line"
+		);
+	}
+
+	render_rate(rows) {
+		const rated = rows.map((row) => {
+			const base = cint(row.present) + cint(row.absent) + cint(row.on_leave) + cint(row.half_day);
+			return {
+				date: row.date,
+				rate: base ? Math.round((cint(row.present) / base) * 100) : 0,
+			};
+		});
+		this.render_series(
+			"vhr-chart-rate",
+			rated,
+			[{ name: __("Present %"), key: "rate", color: "#2490ef" }],
+			rated.length === 1 ? "bar" : "line"
+		);
+	}
+
+	render_series(element_id, rows, series, type) {
+		const parent = this.wrapper.find(`#${element_id}`)[0];
 		if (!parent) return;
-		this.destroy_chart("vhr-chart-timeline");
+		this.destroy_chart(element_id);
+
+		const datasets = series.map((item) => ({
+			name: item.name,
+			values: rows.map((row) => cint(row[item.key])),
+		}));
+		const has_value = datasets.some((set) => set.values.some((value) => value > 0));
+		if (!rows.length || !has_value) {
+			$(parent).html(`<div class="vhr-no-data">${__("No data for current filters")}</div>`);
+			return;
+		}
+
+		$(parent).empty();
+		try {
+			this.charts[element_id] = new frappe.Chart(`#${element_id}`, {
+				type,
+				height: 250,
+				data: {
+					labels: rows.map((row) => frappe.datetime.str_to_user(row.date)),
+					datasets,
+				},
+				colors: series.map((item) => item.color),
+				axisOptions: { xIsSeries: type === "line" && rows.length > 1 },
+			});
+		} catch (e) {
+			$(parent).html(`<div class="vhr-no-data">${__("Chart could not be rendered")}</div>`);
+		}
+	}
+
+	render_compare(element_id, rows) {
+		const parent = this.wrapper.find(`#${element_id}`)[0];
+		if (!parent) return;
+		this.destroy_chart(element_id);
 
 		if (!rows.length) {
 			$(parent).html(`<div class="vhr-no-data">${__("No data for current filters")}</div>`);
@@ -272,19 +376,17 @@ class VaamanHrDashboard {
 
 		$(parent).empty();
 		try {
-			this.charts["vhr-chart-timeline"] = new frappe.Chart("#vhr-chart-timeline", {
-				type: rows.length === 1 ? "bar" : "line",
-				height: 220,
+			this.charts[element_id] = new frappe.Chart(`#${element_id}`, {
+				type: "bar",
+				height: 250,
 				data: {
-					labels: rows.map((r) => frappe.datetime.str_to_user(r.date)),
+					labels: rows.map((row) => this.short_label(row.label)),
 					datasets: [
-						{ name: __("Present"), values: rows.map((r) => cint(r.present)) },
-						{ name: __("Absent"), values: rows.map((r) => cint(r.absent)) },
-						{ name: __("On Leave"), values: rows.map((r) => cint(r.on_leave)) },
+						{ name: __("Present"), values: rows.map((row) => cint(row.present)) },
+						{ name: __("Absent"), values: rows.map((row) => cint(row.absent)) },
 					],
 				},
-				colors: ["#38a169", "#e53e3e", "#ed8936"],
-				axisOptions: { xIsSeries: rows.length > 1 },
+				colors: ["#38a169", "#e53e3e"],
 			});
 		} catch (e) {
 			$(parent).html(`<div class="vhr-no-data">${__("Chart could not be rendered")}</div>`);
@@ -296,8 +398,8 @@ class VaamanHrDashboard {
 		if (!parent) return;
 		this.destroy_chart(element_id);
 
-		const values = rows.map((r) => cint(r.value));
-		if (!rows.length || values.every((v) => v === 0)) {
+		const values = rows.map((row) => cint(row.value));
+		if (!rows.length || values.every((value) => value === 0)) {
 			$(parent).html(`<div class="vhr-no-data">${__("No data for current filters")}</div>`);
 			return;
 		}
@@ -306,12 +408,13 @@ class VaamanHrDashboard {
 		try {
 			this.charts[element_id] = new frappe.Chart(`#${element_id}`, {
 				type,
-				height: 220,
+				height: 250,
 				data: {
-					labels: rows.map((r) => r.label || __("Not Set")),
+					labels: rows.map((row) => this.short_label(row.label)),
 					datasets: [{ name: __("Count"), values }],
 				},
-				colors: ["#2490ef", "#38a169", "#ed8936", "#9f7aea", "#e53e3e"],
+				colors: ["#2490ef", "#38a169", "#ed8936", "#9f7aea", "#e53e3e", "#319795", "#d53f8c"],
+				maxSlices: 8,
 			});
 		} catch (e) {
 			$(parent).html(`<div class="vhr-no-data">${__("Chart could not be rendered")}</div>`);
