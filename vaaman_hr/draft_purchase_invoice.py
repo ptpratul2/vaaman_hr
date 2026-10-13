@@ -169,12 +169,35 @@ def create_pi_as_admin(
         is_cp_po = po_number.startswith("PO/CP") or po_number.startswith("WO/CP")
         is_sr_or_gr = pr_doc.name.startswith("SR") or pr_doc.name.startswith("GR")
 
-        if pr_doc.is_return and pr_doc.naming_series == "GRRET/.FY./.#####":    
-            pi_doc.naming_series = "PRET/.FY./.#####"
+        # if pr_doc.is_return and pr_doc.naming_series == "GRRET/.FY./.#####":
+        
+        
+
+        #     pi_doc.naming_series = "PRET/.FY./.#####"
+        # elif is_sr_or_gr and is_cp_po:
+        #     pi_doc.naming_series = "PCP/.FY./.#####"
+        # else:
+        #     pi_doc.naming_series = "PINV/.FY./.#####"
+        
+        
+        if pr_doc.is_return and pr_doc.naming_series in (
+        "GRRET/.FY./.#####",
+        "SRRET/.FY./.#####",
+        ):
+            if is_cp_po:
+                pi_doc.naming_series = "PCP/PRET/.FY./.#####"
+            else:
+                pi_doc.naming_series = "PRET/.FY./.#####"
+
+            # Normal SR/GR Receipt with CP Purchase Order
+            
         elif is_sr_or_gr and is_cp_po:
             pi_doc.naming_series = "PCP/.FY./.#####"
+
+            # Other cases
         else:
             pi_doc.naming_series = "PINV/.FY./.#####"
+
 
 
         pi_doc.insert()
