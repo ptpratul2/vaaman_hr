@@ -1,6 +1,10 @@
+import time
+
 import frappe
 from frappe import _
 from frappe.utils import cint, get_link_to_form
+from frappe.utils.file_lock import LockTimeoutError
+from frappe.utils.synchronization import filelock
 
 from erpnext.accounts.utils import get_fiscal_year
 from erpnext.stock.doctype.item.item import get_item_defaults
@@ -22,6 +26,8 @@ def auto_create_purchase_invoice(doc, method):
         frappe.enqueue(
             "vaaman_hr.draft_purchase_invoice.create_pi_as_admin",
             queue="short",
+            job_id=_auto_pi_job_id(doc.name),
+            deduplicate=True,
             receipt_name=doc.name,
             posting_date=doc.posting_date,
             supplier_delivery_note=doc.get("supplier_delivery_note"),
@@ -133,82 +139,186 @@ def _set_expense_accounts_on_pi(pi_doc, pr_doc):
         pi_item.expense_account = get_expense_account_from_item_master(pi_item.item_code, pi_doc.company)
 
 
+# MariaDB error 1020 on tabSeries is retryable. Concurrent inserts share one
+# naming-series row, and the background worker does not retry
+# frappe.QueryDeadlockError on its own.
+_SERIES_LOCK_RETRIES = 5
+_JOB_REQUEUE_LIMIT = 3
+_AUTO_PI_LOCK = "auto-purchase-invoice"
+_AUTO_PI_LOCK_TIMEOUT = 300
+
+
+def _auto_pi_job_id(receipt_name, requeue_count=0):
+    receipt_key = (receipt_name or "").replace("/", "-")
+    if requeue_count:
+        return f"auto-pi-{receipt_key}-{requeue_count}"
+    return f"auto-pi-{receipt_key}"
+
+
+def _linked_purchase_invoice(receipt_name):
+    """Active Purchase Invoice already created from this receipt."""
+    row = frappe.db.sql(
+        """
+        SELECT pi.name
+        FROM `tabPurchase Invoice Item` pii
+        INNER JOIN `tabPurchase Invoice` pi ON pi.name = pii.parent
+        WHERE pii.purchase_receipt = %s
+          AND pi.docstatus < 2
+        LIMIT 1
+        """,
+        receipt_name,
+    )
+    return row[0][0] if row else None
+
+
+def _requeue_auto_pi(
+    receipt_name,
+    posting_date,
+    supplier_delivery_note,
+    supplier_delivery_note_date,
+    submitter,
+    requeue_count,
+):
+    frappe.enqueue(
+        "vaaman_hr.draft_purchase_invoice.create_pi_as_admin",
+        queue="short",
+        enqueue_after_commit=True,
+        job_id=_auto_pi_job_id(receipt_name, requeue_count),
+        deduplicate=True,
+        receipt_name=receipt_name,
+        posting_date=posting_date,
+        supplier_delivery_note=supplier_delivery_note,
+        supplier_delivery_note_date=supplier_delivery_note_date,
+        submitter=submitter,
+        requeue_count=requeue_count,
+    )
+
+
 def create_pi_as_admin(
     receipt_name,
     posting_date,
     supplier_delivery_note,
     supplier_delivery_note_date,
     submitter=None,
+    requeue_count=0,
 ):
     """Runs in the background worker. Creates the PI as Administrator."""
     frappe.set_user("Administrator")
+    requeue_count = cint(requeue_count)
+
+    if _linked_purchase_invoice(receipt_name):
+        return
 
     try:
-        pr_doc = frappe.get_doc("Purchase Receipt", receipt_name)
-        validate_item_master_expense_accounts(pr_doc)
-
-        pi_doc = make_purchase_invoice(receipt_name)
-        _set_expense_accounts_on_pi(pi_doc, pr_doc)
-        pi_doc.set_missing_values()
-        _set_expense_accounts_on_pi(pi_doc, pr_doc)
-
-        if supplier_delivery_note:
-            base_bill_no = supplier_delivery_note.strip()
-            pi_doc.bill_no = _get_unique_bill_no(
-                base_bill_no,
-                pi_doc.supplier,
-                pi_doc.company,
-                pi_doc.posting_date or posting_date,
+        # One auto-PI at a time. The invoice is committed before the lock is
+        # released, so the next job starts after tabSeries has moved on.
+        with filelock(_AUTO_PI_LOCK, timeout=_AUTO_PI_LOCK_TIMEOUT):
+            for attempt in range(_SERIES_LOCK_RETRIES):
+                try:
+                    if _linked_purchase_invoice(receipt_name):
+                        return
+                    _create_draft_purchase_invoice(
+                        receipt_name,
+                        posting_date,
+                        supplier_delivery_note,
+                        supplier_delivery_note_date,
+                    )
+                    frappe.db.commit()
+                    return
+                except frappe.QueryDeadlockError:
+                    frappe.db.rollback()
+                    if attempt < _SERIES_LOCK_RETRIES - 1:
+                        time.sleep(attempt + 1)
+                        continue
+                    raise
+    except (frappe.QueryDeadlockError, LockTimeoutError) as e:
+        frappe.db.rollback()
+        if requeue_count < _JOB_REQUEUE_LIMIT:
+            _requeue_auto_pi(
+                receipt_name,
+                posting_date,
+                supplier_delivery_note,
+                supplier_delivery_note_date,
+                submitter,
+                requeue_count + 1,
             )
-            # pi_doc.bill_date = supplier_delivery_note_date or posting_date
-        pi_doc.bill_date = pr_doc.custom_supplier_delivery_date
-        pi_doc.flags.ignore_mandatory = True
-        pi_doc.custom_auto_generated = 1
-        pi_doc.purchase_order_number = pr_doc.custom_purchase_order_number
-        po_number = (pr_doc.custom_purchase_order_number or "").strip()
-        is_cp_po = po_number.startswith("PO/CP") or po_number.startswith("WO/CP")
-        is_sr_or_gr = pr_doc.name.startswith("SR") or pr_doc.name.startswith("GR")
-
-        # if pr_doc.is_return and pr_doc.naming_series == "GRRET/.FY./.#####":
-        
-        
-
-        #     pi_doc.naming_series = "PRET/.FY./.#####"
-        # elif is_sr_or_gr and is_cp_po:
-        #     pi_doc.naming_series = "PCP/.FY./.#####"
-        # else:
-        #     pi_doc.naming_series = "PINV/.FY./.#####"
-        
-        
-        if pr_doc.is_return and pr_doc.naming_series in (
-        "GRRET/.FY./.#####",
-        "SRRET/.FY./.#####",
-        ):
-            if is_cp_po:
-                pi_doc.naming_series = "PCP/PRET/.FY./.#####"
-            else:
-                pi_doc.naming_series = "PRET/.FY./.#####"
-
-            # Normal SR/GR Receipt with CP Purchase Order
-            
-        elif is_sr_or_gr and is_cp_po:
-            pi_doc.naming_series = "PCP/.FY./.#####"
-
-            # Other cases
-        else:
-            pi_doc.naming_series = "PINV/.FY./.#####"
-
-
-
-        pi_doc.insert()
-
-        pi_doc.add_comment("Comment", "System Auto-Generated Draft Purchase Invoice")
-        pr_doc.add_comment("Comment", f"System Auto-Generated Draft Purchase Invoice: {pi_doc.name}")
-
-    except Exception as e:
-        frappe.log_error(title=f"Auto-PI Error for {receipt_name}", message=frappe.get_traceback())
+            return
+        frappe.log_error(
+            title=f"Auto-PI Error for {receipt_name}",
+            message=frappe.get_traceback(),
+        )
         _notify_auto_pi_failure(submitter, str(e))
         raise
+    except Exception as e:
+        frappe.log_error(
+            title=f"Auto-PI Error for {receipt_name}",
+            message=frappe.get_traceback(),
+        )
+        _notify_auto_pi_failure(submitter, str(e))
+        raise
+
+
+def _create_draft_purchase_invoice(
+    receipt_name,
+    posting_date,
+    supplier_delivery_note,
+    supplier_delivery_note_date,
+):
+    pr_doc = frappe.get_doc("Purchase Receipt", receipt_name)
+    validate_item_master_expense_accounts(pr_doc)
+
+    pi_doc = make_purchase_invoice(receipt_name)
+    _set_expense_accounts_on_pi(pi_doc, pr_doc)
+    pi_doc.set_missing_values()
+    _set_expense_accounts_on_pi(pi_doc, pr_doc)
+
+    if supplier_delivery_note:
+        base_bill_no = supplier_delivery_note.strip()
+        pi_doc.bill_no = _get_unique_bill_no(
+            base_bill_no,
+            pi_doc.supplier,
+            pi_doc.company,
+            pi_doc.posting_date or posting_date,
+        )
+        # pi_doc.bill_date = supplier_delivery_note_date or posting_date
+    pi_doc.bill_date = pr_doc.custom_supplier_delivery_date
+    pi_doc.flags.ignore_mandatory = True
+    pi_doc.custom_auto_generated = 1
+    pi_doc.purchase_order_number = pr_doc.custom_purchase_order_number
+    po_number = (pr_doc.custom_purchase_order_number or "").strip()
+    is_cp_po = po_number.startswith("PO/CP") or po_number.startswith("WO/CP")
+    is_sr_or_gr = pr_doc.name.startswith("SR") or pr_doc.name.startswith("GR")
+
+    # if pr_doc.is_return and pr_doc.naming_series == "GRRET/.FY./.#####":
+
+    #     pi_doc.naming_series = "PRET/.FY./.#####"
+    # elif is_sr_or_gr and is_cp_po:
+    #     pi_doc.naming_series = "PCP/.FY./.#####"
+    # else:
+    #     pi_doc.naming_series = "PINV/.FY./.#####"
+
+    if pr_doc.is_return and pr_doc.naming_series in (
+        "GRRET/.FY./.#####",
+        "SRRET/.FY./.#####",
+    ):
+        if is_cp_po:
+            pi_doc.naming_series = "PCP/PRET/.FY./.#####"
+        else:
+            pi_doc.naming_series = "PRET/.FY./.#####"
+
+        # Normal SR/GR Receipt with CP Purchase Order
+
+    elif is_sr_or_gr and is_cp_po:
+        pi_doc.naming_series = "PCP/.FY./.#####"
+
+        # Other cases
+    else:
+        pi_doc.naming_series = "PINV/.FY./.#####"
+
+    pi_doc.insert()
+
+    pi_doc.add_comment("Comment", "System Auto-Generated Draft Purchase Invoice")
+    pr_doc.add_comment("Comment", f"System Auto-Generated Draft Purchase Invoice: {pi_doc.name}")
 
 
 def _notify_auto_pi_failure(submitter, message):
