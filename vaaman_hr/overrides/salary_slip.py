@@ -1,3 +1,4 @@
+import re
 from datetime import timedelta
 
 import frappe
@@ -11,6 +12,7 @@ from hrms.payroll.doctype.salary_slip.salary_slip import(
     get_additional_salaries,
     get_salary_component_data,
 )
+from hrms.payroll.utils import _safe_eval
 
 # ==========================================
 # VERSION DETECTION
@@ -282,18 +284,134 @@ class CustomSalarySlip(ERPNextSalarySlip):
             joining_date = getdate(self.joining_date)
             data.joining_date = joining_date
             default_data.joining_date = joining_date
+        # Additional Salary overwrite is the earned amount. Seed it before formulas
+        # in this pass so an earlier component (PF Employee) can read it. The
+        # overwritten component's own formula still runs afterwards and would put
+        # the standard amount back; add_structure_component restores the earned one
+        # before the next formula (EPS / EDLI / ESIC Basic) is evaluated.
+        for abbr, amount in self._overwrite_amounts_by_abbr().items():
+            data[abbr] = amount
         return data, default_data
 
     def add_structure_components(self, component_type):
+        self._component_type_being_added = component_type
         super().add_structure_components(component_type)
-        if component_type != "earnings":
+        if component_type == "earnings":
+            self._earnings_eval_data = frappe._dict(self.data)
+            # Statistical components aren't saved as slip rows, so capture PAID DAYS here (falls back to PAYMENT DAYS below).
+            value = self._get_structure_component_value(component_type, "PAID DAYS")
+            if value is None:
+                value = self._get_structure_component_value(component_type, "PAYMENT DAYS")
+            self.custom_paid_days = value or 0
             return
 
-        # Statistical components aren't saved as slip rows, so capture PAID DAYS here (falls back to PAYMENT DAYS below).
-        value = self._get_structure_component_value(component_type, "PAID DAYS")
-        if value is None:
-            value = self._get_structure_component_value(component_type, "PAYMENT DAYS")
-        self.custom_paid_days = value or 0
+        if component_type != "deductions":
+            return
+
+        # ESIC Employee is listed before ESIC Basic, so the first pass still sees
+        # the previous ESIC Basic. Run the deduction formulas once more now that
+        # every deduction abbr holds its earned amount.
+        evaluated = getattr(self, "_evaluated_components", None) or {}
+        for struct_row in evaluated.get("deductions") or []:
+            self.add_structure_component(struct_row, "deductions")
+        self._refresh_earnings_that_use_deductions()
+
+    def _refresh_earnings_that_use_deductions(self):
+        """Recalculate earnings such as ESIC Employer once ESIC Basic is known."""
+        earnings_data = getattr(self, "_earnings_eval_data", None)
+        if not earnings_data or not getattr(self, "data", None):
+            return
+        evaluated = getattr(self, "_evaluated_components", None) or {}
+        deduction_abbrs = [row.abbr for row in evaluated.get("deductions") or [] if row.abbr]
+        if not deduction_abbrs:
+            return
+
+        merged = frappe._dict(earnings_data)
+        for abbr in deduction_abbrs:
+            if abbr in self.data:
+                merged[abbr] = self.data[abbr]
+
+        saved_data = self.data
+        saved_type = self._component_type_being_added
+        self.data = merged
+        self._component_type_being_added = "earnings"
+        try:
+            for struct_row in evaluated.get("earnings") or []:
+                if struct_row.statistical_component or struct_row.accrual_component:
+                    continue
+                formula = struct_row.formula or ""
+                if not any(re.search(rf"\b{re.escape(abbr)}\b", formula) for abbr in deduction_abbrs):
+                    continue
+                self.add_structure_component(struct_row, "earnings")
+        finally:
+            self.data = saved_data
+            self._component_type_being_added = saved_type
+
+    def add_structure_component(self, struct_row, component_type):
+        super().add_structure_component(struct_row, component_type)
+        # A failed condition does not remove a row already stored on the slip,
+        # so ESIC Employer stayed even when custom_esic is 0.
+        if not self._structure_condition_met(struct_row):
+            self.set(
+                component_type,
+                [
+                    row
+                    for row in self.get(component_type)
+                    if row.salary_component != struct_row.salary_component
+                    or row.get("additional_salary")
+                ],
+            )
+            if struct_row.abbr and getattr(self, "data", None) is not None:
+                self.data[struct_row.abbr] = 0
+            return
+        overwrites = self._overwrite_amounts_by_component()
+        if struct_row.salary_component not in overwrites or not struct_row.abbr:
+            return
+        if not getattr(self, "data", None):
+            return
+        amount = overwrites[struct_row.salary_component]
+        self.data[struct_row.abbr] = amount
+        for row in self.get(component_type):
+            if row.salary_component == struct_row.salary_component:
+                row.amount = amount
+                break
+
+    def _structure_condition_met(self, struct_row):
+        condition = struct_row.condition
+        if not condition:
+            return True
+        return bool(
+            _safe_eval(condition, getattr(self, "whitelisted_globals", None), getattr(self, "data", None))
+        )
+
+    def _overwrite_amounts_by_component(self):
+        component_type = getattr(self, "_component_type_being_added", None)
+        if not component_type or not self.employee or not self.start_date:
+            return {}
+        cache = getattr(self, "_overwrite_amount_cache", None)
+        if cache is None:
+            cache = {}
+            self._overwrite_amount_cache = cache
+        if component_type not in cache:
+            rows = get_additional_salaries(
+                self.employee, self.start_date, self.end_date, component_type
+            )
+            cache[component_type] = {
+                d.component: flt(d.amount) for d in rows if d.overwrite
+            }
+        return cache[component_type]
+
+    def _overwrite_amounts_by_abbr(self):
+        by_component = self._overwrite_amounts_by_component()
+        if not by_component:
+            return {}
+        evaluated = getattr(self, "_evaluated_components", None) or {}
+        component_type = getattr(self, "_component_type_being_added", None)
+        amounts = {}
+        for struct_row in evaluated.get(component_type) or []:
+            if struct_row.salary_component in by_component and struct_row.abbr:
+                amounts[struct_row.abbr] = by_component[struct_row.salary_component]
+        return amounts
 
     def _get_structure_component_value(self, component_type, component_name):
         # self.data defaults every component abbr to 0, so check the structure's rows instead to detect presence.
@@ -405,10 +523,18 @@ class CustomSalarySlip(ERPNextSalarySlip):
             and payroll_settings.consider_marked_attendance_on_holidays
         )
         holidays_list = list(holidays)
+        # HRMS counts a half-day holiday as half a working day, unless holidays
+        # are already included in total working days.
+        half_day_holidays = []
+        if not cint(payroll_settings.include_holidays_in_total_working_days):
+            half_day_holidays = self.get_half_day_holidays_for_employee(period_start, period_end)
+        half_day_holiday_set = set(half_day_holidays)
+        full_day_holidays = [date for date in holidays_list if date not in half_day_holiday_set]
 
         if payroll_settings.payroll_based_on == "Attendance":
             return self.calculate_lwp_ppl_and_absent_days_based_on_attendance(
-                holidays_list,
+                full_day_holidays,
+                half_day_holidays,
                 daily_wages_fraction_for_half_day,
                 consider_marked_attendance_on_holidays,
             )[0]
@@ -417,7 +543,8 @@ class CustomSalarySlip(ERPNextSalarySlip):
         working_days_list = [period_start + timedelta(days=day) for day in range(period_days)]
 
         return self.calculate_lwp_or_ppl_based_on_leave_application(
-            holidays_list,
+            full_day_holidays,
+            half_day_holidays,
             working_days_list,
             daily_wages_fraction_for_half_day,
         )
