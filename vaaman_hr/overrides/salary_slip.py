@@ -62,6 +62,7 @@ PAID_LEAVE_TYPES = {
     "Casual Leave",
     "Sick Leave - Zinc",
     "Festival Leave",
+    "Privilege Leave - Lanjigarh",
 }
 
 
