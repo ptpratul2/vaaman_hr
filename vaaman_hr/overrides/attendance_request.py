@@ -7,6 +7,41 @@ from hrms.hr.doctype.attendance_request.attendance_request import AttendanceRequ
 from vaaman_hr.overrides.attendance_utils import relink_checkins_from_cancelled_attendance
 
 
+def is_authorized_leave_approver(employee_id, user):
+    """
+    Checks if `user` is an authorized leave approver for `employee_id`:
+    1. Direct leave_approver on Employee master.
+    2. Any leave_approvers in the employee's Department (and parent departments in hierarchy).
+    """
+    if not employee_id or not user:
+        return False
+
+    direct_approver = frappe.db.get_value("Employee", employee_id, "leave_approver")
+    if direct_approver and direct_approver.strip().lower() == user.strip().lower():
+        return True
+
+    department = frappe.db.get_value("Employee", employee_id, "department")
+    if department:
+        dept_info = frappe.db.get_value("Department", department, ["lft", "rgt"], as_dict=True)
+        if dept_info and dept_info.lft and dept_info.rgt:
+            parent_depts = frappe.db.sql_list("""
+                SELECT name FROM `tabDepartment`
+                WHERE lft <= %s AND rgt >= %s
+            """, (dept_info.lft, dept_info.rgt))
+        else:
+            parent_depts = [department]
+
+        if parent_depts:
+            dept_approvers = frappe.db.sql_list("""
+                SELECT approver FROM `tabDepartment Approver`
+                WHERE parent IN %s AND parentfield = 'leave_approvers'
+            """, (tuple(parent_depts),))
+            if any(a and a.strip().lower() == user.strip().lower() for a in dept_approvers):
+                return True
+
+    return False
+
+
 class CustomAttendanceRequest(AttendanceRequest):
 
     def validate(self):
@@ -18,10 +53,9 @@ class CustomAttendanceRequest(AttendanceRequest):
         if self.custom_attendance_request_status not in ("Approved", "Rejected"):
             frappe.throw(_("Attendance Request Status must be Approved or Rejected before submitting."))
         user_roles = frappe.get_roles(frappe.session.user)
-        is_authorized_manager = "System Manager" in user_roles or "HO HR Manager" in user_roles
+        is_authorized_manager = bool(set(user_roles) & {"System Manager", "HO HR Manager", "Administrator"})
         if not is_authorized_manager:
-            employee_approver = frappe.db.get_value("Employee", self.employee, "leave_approver")
-            if employee_approver != frappe.session.user:
+            if not is_authorized_leave_approver(self.employee, frappe.session.user):
                 frappe.throw(
                     _("Only the designated leave approver or an authorized manager can submit this request."), 
                     frappe.PermissionError
