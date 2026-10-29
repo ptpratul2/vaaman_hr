@@ -809,6 +809,17 @@ class CustomSalarySlip(ERPNextSalarySlip):
         )
         self.custom_public_holiday = len(pph_holiday_dates)
         
+        # Public Holidays:
+        if mark_absent_on_public_holiday:
+            self.custom_public_holiday = sum(
+                1
+                for holiday_date in pph_holiday_dates
+                if holiday_date not in attendance_by_date
+                or attendance_by_date[holiday_date].status == "Holiday"
+            )
+        else:
+            self.custom_public_holiday = len(pph_holiday_dates)
+
         # Weekly off on Holiday
         self.custom_weekly_off_on_holiday = sum(
             1
