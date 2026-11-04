@@ -512,6 +512,7 @@ def get_rows(employee_details: dict, filters: Filters, holiday_map: dict, attend
             filters={
                 "docstatus": 1,
                 "applicable_for": "Employee",
+                "assigned_to": employee,
                         
                 "from_date": ["<=", month_end],
                         
