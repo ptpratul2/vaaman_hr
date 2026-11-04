@@ -627,5 +627,16 @@
         "property_type": "Check",
         "__islocal": 1,
         "name": "Salary Structure Assignment-custom_other_allow_daily_rate-allow_on_submit"
+    },{
+        "doctype": "Property Setter",
+        "doctype_or_field": "DocField",
+        "doc_type": "Salary Structure Assignment",
+        "module": "Vaaman Hr",
+        "field_name": "custom_ot_fixed_rate",
+        "property": "allow_on_submit",
+        "value": "1",
+        "property_type": "Check",
+        "__islocal": 1,
+        "name": "Salary Structure Assignment-custom_ot_fixed_rate"
     }
 ]

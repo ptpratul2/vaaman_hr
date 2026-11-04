@@ -64,9 +64,20 @@ class CustomAttendanceRequest(AttendanceRequest):
     def on_submit(self):
         if self.custom_attendance_request_status == "Approved":
             super().on_submit()
+            self.set_linked_attendance()
         else:
             frappe.msgprint("Attendance Request is Rejected. The request will now be cancelled.")
             self.cancel()
+
+    def set_linked_attendance(self):
+        # Same lookup the Connections dashboard uses: Attendance.attendance_request -> this request
+        attendance = frappe.get_all(
+            "Attendance",
+            filters={"attendance_request": self.name, "docstatus": 1},
+            pluck="name",
+            order_by="attendance_date asc",
+        )
+        self.db_set("custom_attendance", ", ".join(attendance))
 
     def validate_no_attendance_to_create(self):
         if self.reason in ("Weekly Off",) or self.custom_mark_absent:
