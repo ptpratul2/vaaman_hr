@@ -1707,7 +1707,28 @@ def get_rows(employee_details: dict, filters: Filters, holiday_map: dict, attend
 
     for employee, details in employee_details.items():
         emp_holiday_list = details.holiday_list or default_holiday_list
+        # holidays = holiday_map.get(emp_holiday_list)
+        total_days = get_total_days_in_month(filters)
+        month_start = getdate(f"{filters.year}-{filters.month}-01")
+        month_end = getdate(f"{filters.year}-{filters.month}-{total_days}")
+        assignments = frappe.get_all(
+            "Holiday List Assignment",
+            filters={
+                "docstatus": 1,
+                "applicable_for": "Employee",
+                "assigned_to": employee,
+                
+                "from_date": ["<=", month_end],
+                
+            },
+            fields=["holiday_list", "from_date"],
+            order_by="from_date desc",
+            limit_page_length=1,
+        )
+        if assignments:
+            emp_holiday_list = assignments[0].holiday_list
         holidays = holiday_map.get(emp_holiday_list)
+        
 
         if filters.summarized_view:
             attendance = get_attendance_status_for_summarized_view(employee, filters, holidays, last_marked_day)
