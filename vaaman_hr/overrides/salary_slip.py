@@ -436,19 +436,26 @@ class CustomSalarySlip(ERPNextSalarySlip):
         daily_wages_fraction_for_half_day,
         is_staff=False,
         national_holiday_dates=None,
+        cancelled_only_dates=None,
     ):
         """Paid days = Present + paid leaves + half-days; excludes absent, LWP, weekly off.
 
         Unmarked national holidays on the employee calendar count as paid for all employees.
         If leave, present, or absent is marked on that date, attendance rules apply instead
         (workers who did not work on a national holiday are marked Absent).
+        A date whose only attendance is cancelled is ignored, whatever its status was.
         """
         national_holiday_dates = national_holiday_dates or set()
+        cancelled_only_dates = cancelled_only_dates or set()
         leave_type_map = self.get_leave_type_map()
         payable_days = 0
         current_date = period_start
 
         while current_date <= period_end:
+            if current_date in cancelled_only_dates:
+                current_date += timedelta(days=1)
+                continue
+
             is_holiday = current_date in holidays
             row = attendance_by_date.get(current_date)
 
@@ -713,8 +720,38 @@ class CustomSalarySlip(ERPNextSalarySlip):
             fields=["attendance_date", "status", "leave_type", "half_day_status"],
         )
         attendance_by_date = {getdate(row.attendance_date): row for row in attendance_rows}
-        # PH on Basic:
-        # Count only public holidays where no Attendance record exists.
+
+        # When current-month joiners/relievers use the full payroll month as working
+        # days, days outside the employment period must still reduce payment days.
+        is_join_month = self._is_current_month_joining(
+            start_date, end_date, joining_date, current_month_joining
+        )
+        is_relieve_month = self._is_current_month_relieving(
+            start_date, end_date, relieving_date
+        )
+        attendance_count_start = start_date if is_join_month else period_start
+        attendance_count_end = end_date if is_relieve_month else period_end
+
+        # Cancelled attendance is not a valid day. Its status (Present, Absent,
+        # Leave, Half Day, Weekly Off, or anything else) must not land in absent,
+        # unmarked, payment, leave, or holiday counts. A submitted attendance on
+        # the same date still counts.
+        cancelled_only_dates = {
+            getdate(attendance_date)
+            for attendance_date in frappe.get_all(
+                "Attendance",
+                filters={
+                    "employee": self.employee,
+                    "attendance_date": ["between", [attendance_count_start, attendance_count_end]],
+                    "docstatus": 2,
+                },
+                pluck="attendance_date",
+            )
+        } - set(attendance_by_date)
+
+        # PH on Basic: public holidays with no submitted attendance.
+        # A cancelled attendance on that holiday is not a valid record, and it is
+        # not added here either.
         ph_on_basic = 0
 
         if mark_ph_on_basic:
@@ -722,6 +759,7 @@ class CustomSalarySlip(ERPNextSalarySlip):
                 1
                 for holiday_date in pph_holiday_dates
                 if holiday_date not in attendance_by_date
+                and holiday_date not in cancelled_only_dates
             )
 
         self.custom_ph_on_basic = ph_on_basic
@@ -744,19 +782,9 @@ class CustomSalarySlip(ERPNextSalarySlip):
 
 
 
-        # When current-month joiners/relievers use the full payroll month as working
-        # days, days outside the employment period must still reduce payment days.
-        is_join_month = self._is_current_month_joining(
-            start_date, end_date, joining_date, current_month_joining
-        )
-        is_relieve_month = self._is_current_month_relieving(
-            start_date, end_date, relieving_date
-        )
-        attendance_count_start = start_date if is_join_month else period_start
-        attendance_count_end = end_date if is_relieve_month else period_end
-
         absent_days = 0
         unmarked_days = 0
+        ignored_cancelled_days = 0
         current_date = attendance_count_start
         while current_date <= attendance_count_end:
             is_holiday = current_date in holidays
@@ -776,6 +804,8 @@ class CustomSalarySlip(ERPNextSalarySlip):
                 if is_relieve_month and current_date > period_end:
                     unmarked_days += 1
                     absent_days += 1
+                elif current_date in cancelled_only_dates:
+                    ignored_cancelled_days += 1
                 elif not is_holiday:
                     unmarked_days += 1
                     if consider_unmarked_as == "Absent":
@@ -915,12 +945,17 @@ class CustomSalarySlip(ERPNextSalarySlip):
             daily_wages_fraction_for_half_day,
             is_staff=not is_worker,
             national_holiday_dates=pph_holiday_dates,
+            cancelled_only_dates=cancelled_only_dates,
         )
 
         if is_worker:
             self.payment_days = max(
                 0,
-                flt(self.total_working_days) - flt(self.absent_days) - flt(self.leave_without_pay)- flt(self.custom_ph_on_basic),
+                flt(self.total_working_days)
+                - flt(self.absent_days)
+                - flt(self.leave_without_pay)
+                - flt(self.custom_ph_on_basic)
+                - flt(ignored_cancelled_days),
             )
         else:
             self.payment_days = max(0, flt(payable_days)- flt(self.custom_ph_on_basic))
