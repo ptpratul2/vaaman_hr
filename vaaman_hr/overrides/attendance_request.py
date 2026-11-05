@@ -77,7 +77,8 @@ class CustomAttendanceRequest(AttendanceRequest):
             pluck="name",
             order_by="attendance_date asc",
         )
-        self.db_set("custom_attendance", ", ".join(attendance))
+        if frappe.get_meta("Attendance Request").has_field("custom_attendance"):
+            self.db_set("custom_attendance", ", ".join(attendance))
 
     def validate_no_attendance_to_create(self):
         if self.reason in ("Weekly Off",) or self.custom_mark_absent:

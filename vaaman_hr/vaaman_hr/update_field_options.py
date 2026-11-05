@@ -48,6 +48,14 @@ def update_attendance_request_custom_fields():
         "insert_after": "include_holidays",
         "default": "0"
     })
+    # Linked attendance names for a multi-day request do not fit in a Data field.
+    create_custom_field_if_not_exists("Attendance Request", {
+        "fieldname": "custom_attendance",
+        "label": "Attendance",
+        "fieldtype": "Small Text",
+        "insert_after": "custom_attendance_request_status",
+        "read_only": 1,
+    })
 
 
 def allow_salary_structure_assignment_fields_on_submit():
