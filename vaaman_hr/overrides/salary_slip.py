@@ -292,13 +292,61 @@ class CustomSalarySlip(ERPNextSalarySlip):
         # before the next formula (EPS / EDLI / ESIC Basic) is evaluated.
         for abbr, amount in self._overwrite_amounts_by_abbr().items():
             data[abbr] = amount
+        # Earnings pass fills the snapshot after this method returns.
+        if getattr(self, "_component_type_being_added", None) != "earnings":
+            self._restore_referenced_statistical_components(data, default_data)
         return data, default_data
+
+    def _restore_referenced_statistical_components(self, data, default_data):
+        """Put back statistical abbrs that this pass's formulas actually reference.
+
+        FULL BASIC (FB) and the other statistical earnings are not salary slip
+        rows. The next pass rebuilds the formula context from slip rows, so an
+        unreferenced abbr stays 0. A deduction such as ESIC Basic reads FB, and
+        must see the value computed in the earnings pass.
+        """
+        earnings_data = getattr(self, "_earnings_eval_data", None)
+        if not earnings_data:
+            return
+        evaluated = getattr(self, "_evaluated_components", None) or {}
+        component_type = getattr(self, "_component_type_being_added", None)
+        if component_type not in ("deductions", "employer_contributions"):
+            return
+
+        statistical_rows = [
+            row
+            for row in evaluated.get("earnings") or []
+            if row.abbr
+            and (row.statistical_component or row.accrual_component)
+            and row.abbr in earnings_data
+        ]
+        if not statistical_rows:
+            return
+
+        texts = []
+        for row in evaluated.get(component_type) or []:
+            if row.formula:
+                texts.append(row.formula)
+            if row.condition:
+                texts.append(row.condition)
+        if not texts:
+            return
+
+        formula_text = "\n".join(texts)
+        earnings_default = getattr(self, "_earnings_default_data", None) or {}
+        for row in statistical_rows:
+            if not re.search(rf"\b{re.escape(row.abbr)}\b", formula_text):
+                continue
+            data[row.abbr] = earnings_data[row.abbr]
+            if row.abbr in earnings_default:
+                default_data[row.abbr] = earnings_default[row.abbr]
 
     def add_structure_components(self, component_type):
         self._component_type_being_added = component_type
         super().add_structure_components(component_type)
         if component_type == "earnings":
             self._earnings_eval_data = frappe._dict(self.data)
+            self._earnings_default_data = frappe._dict(getattr(self, "default_data", None) or {})
             # Statistical components aren't saved as slip rows, so capture PAID DAYS here (falls back to PAYMENT DAYS below).
             value = self._get_structure_component_value(component_type, "PAID DAYS")
             if value is None:
