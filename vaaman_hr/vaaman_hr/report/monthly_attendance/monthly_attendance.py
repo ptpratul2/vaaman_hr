@@ -1999,7 +1999,10 @@ def get_attendance_status_for_detailed_view(
                             status_part = "P" if day_att.half_day_status == "Present" else "A"
                             if m_leave_abbr:
                                 abbr = f"HD/{m_leave_abbr}/{status_part}"
-                                t_l += 0.5
+                                # LWP stays in its own column. It is not part of Total Leaves,
+                                # because payment days adds Total Leaves as PL.
+                                if m_leave_type != "Leave Without Pay":
+                                    t_l += 0.5
                                 if lt_key:
                                     row[lt_key] = row.get(lt_key, 0.0) + 0.5
                                 # t_p += 0.5        #######
