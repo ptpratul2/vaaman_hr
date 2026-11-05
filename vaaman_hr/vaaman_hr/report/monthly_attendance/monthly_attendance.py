@@ -1735,13 +1735,13 @@ def get_rows(employee_details: dict, filters: Filters, holiday_map: dict, attend
             if not attendance:
                 continue
 
-            leave_summary = get_leave_summary(employee, filters)
             entry_exits_summary = get_entry_exits_summary(employee, filters)
 
             row = {"employee": employee, "employee_name": details.employee_name, "custom_staffworker": details.custom_staffworker, "attendance_device_id": details.attendance_device_id,}
             set_defaults_for_summarized_view(filters, row)
+            # Leave columns follow the attendance row (leave type actually marked),
+            # not every approved application that overlaps the date.
             row.update(attendance)
-            row.update(leave_summary)
             row.update(entry_exits_summary)
             row["total_overtime"] = get_total_overtime(employee, filters)
             row["additinal_ot"] = get_additional_ot(employee, filters)
@@ -1775,7 +1775,7 @@ def get_attendance_status_for_summarized_view(employee: str, filters: Filters, h
     detailed_data = get_attendance_status_for_detailed_view(employee, filters, {"": {}}, holidays, last_marked_day=last_marked_day)
     if not detailed_data: return {}
     res = detailed_data[0]
-    return {
+    summary = {
         "total_present": res.get("total_present", 0),
         "total_leaves": res.get("total_leaves", 0),
         "total_absent": res.get("total_absent", 0),
@@ -1783,8 +1783,19 @@ def get_attendance_status_for_summarized_view(employee: str, filters: Filters, h
         "total_weekly_off": res.get("total_weekly_off", 0),
         "pph": res.get("pph", 0),
         "unmarked_days": res.get("unmarked_days", 0),
-        
     }
+    skip = set(summary) | {
+        "total_overtime",
+        "additinal_ot",
+        "paid_days",
+        "total_late_entries",
+        "total_early_exits",
+    }
+    for key, value in res.items():
+        if key in skip or key.isdigit() or not isinstance(value, (int, float)):
+            continue
+        summary[key] = value
+    return summary
 def get_attendance_summary_and_days(employee: str, filters: Filters) -> tuple[dict, list]:
     Attendance = frappe.qb.DocType("Attendance")
 
@@ -1957,24 +1968,9 @@ def get_attendance_status_for_detailed_view(
                             abbr = "HD/P/A"
                             t_a += 0.5
                     else:
-                        # if len(day_leaves) > 1:
-                        #     abbr = f"HD/{'/'.join(day_leaves)}"
-                        #     t_l += 1.0
-                        #     if lt_key: 
-                        #         row[lt_key] = row.get(lt_key, 0.0) + 1.0
-                        if len(day_leaves) > 1:
-                            abbr = f"HD/{'/'.join(day_leaves)}"
-                            
-                            # Two half-day leaves on the same date
-                            for leave_type in day_leaves:
-                                t_l += 0.5
-                                leave_name = abbr_to_leave_type.get(leave_type)
-
-                                if leave_name:
-                                    key = frappe.scrub(leave_name)
-                                    row[key] = row.get(key, 0.0) + 0.5
-                ###########################################################################        
-                        elif has_punch:
+                        # Count the leave type stored on Attendance. Another approved
+                        # application on the same date (not linked on this row) is not a second half day.
+                        if has_punch:
                             if day_att.half_day_status == "Present":
                                 t_p += 0.5
                                 if day_att.leave_application or m_leave_abbr:
