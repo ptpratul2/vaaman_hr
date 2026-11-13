@@ -705,16 +705,18 @@ def log_geofence_event(employee, log_type, latitude, longitude, timestamp,permis
         frappe.throw("Employee, Log Type, Latitude, Longitude, and Timestamp are required.")
     
     try:
-        # last_log_type = frappe.db.get_value(
-        #     "Employee Checkin",
-        #     {"employee": employee},
-        #     "log_type",
-        #     order_by="time desc"
-        # )
+        # Safety net: skip consecutive duplicate logs (OUT-OUT or IN-IN) for the same employee.
+        # The root cause (frontend phantom OUTs) is fixed, but this prevents any future edge cases
+        # from offline queue replays, network retries, or unforeseen bugs.
+        last_log_type = frappe.db.get_value(
+            "Employee Checkin",
+            {"employee": employee, "docstatus": 0},
+            "log_type",
+            order_by="time desc"
+        )
+        if last_log_type and last_log_type == log_type:
+            return {"status": "skipped", "message": f"Skipped redundant log; employee is already {log_type}."}
 
-        # if last_log_type and last_log_type == log_type:
-        #     return {"status": "skipped", "message": "Skipped redundant log; employee is already in this state."}
-        
         try:
             kolkata_tz = pytz.timezone('Asia/Kolkata')
             utc_time = get_datetime(timestamp)
@@ -760,9 +762,22 @@ def log_geofence_event_batch(employee, events):
     logged_count = 0
     skipped_count = 0
 
+    # Track last inserted type within this batch to also deduplicate within a single batch replay.
+    last_inserted_type = frappe.db.get_value(
+        "Employee Checkin",
+        {"employee": employee, "docstatus": 0},
+        "log_type",
+        order_by="time desc"
+    )
+
     for event in events_list:
         try:
             event_log_type = event.get("log_type")
+
+            # Skip if this event is a consecutive duplicate of the last committed log.
+            if last_inserted_type and last_inserted_type == event_log_type:
+                skipped_count += 1
+                continue
 
             timestamp_val = event.get("timestamp")
             if not timestamp_val:
@@ -808,6 +823,7 @@ def log_geofence_event_batch(employee, events):
 
             checkin.insert(ignore_permissions=True)
             logged_count += 1
+            last_inserted_type = event_log_type  # track for within-batch deduplication
             
             if event_log_type == "OUT" or perm_revoked == 1:
                 frappe.enqueue(method=notify_managers_on_geofence_event, queue='short', employee=employee, log_type=event_log_type)
