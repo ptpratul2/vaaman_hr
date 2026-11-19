@@ -222,7 +222,21 @@ class CustomSalarySlip(ERPNextSalarySlip):
 
         if data:
             data[component_row.abbr] = component_row.amount
-    
+
+    def get_amount_based_on_payment_days(self, row):
+        amount, additional_amount = super().get_amount_based_on_payment_days(row)
+        # Core HRMS: if amount is 0 but additional_amount is set, use additional_amount.
+        # That breaks Additional Salary overwrite-to-0, where additional_amount is
+        # (0 - default) and would wrongly subtract from gross_pay.
+        if (
+            row.additional_salary
+            and flt(row.amount) == 0
+            and flt(row.additional_amount) != 0
+            and flt(amount) == flt(row.additional_amount)
+        ):
+            return 0.0, 0.0
+        return amount, additional_amount
+
     def _get_payroll_settings(self):
         return frappe.get_cached_value(
             "Payroll Settings",
