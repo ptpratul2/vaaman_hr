@@ -75,8 +75,8 @@ def get_standard_weekoffs(start_date, end_date):
         frappe.log_error(f"Date error:\nStart: {start_date}\nEnd: {end_date}\n{e}", "get_standard_weekoffs")
         return 0
 
-# ---------- Main Hook: Set Standard Weekly Off & Salary Weekly Off ----------
-def before_save(doc, method):
+def set_weekly_off_fields(doc):
+    """Set weekly-off inputs before salary component formulas run."""
     try:
         if not (doc.start_date and doc.end_date):
             return
@@ -143,4 +143,8 @@ def before_save(doc, method):
             doc.sal_weekoff = total_weekly_off
 
     except Exception as e:
-        log_error("before_save", doc, e)
+        log_error("set_weekly_off_fields", doc, e)
+
+
+def before_save(doc, method=None):
+    set_weekly_off_fields(doc)

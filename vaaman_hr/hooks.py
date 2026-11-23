@@ -42,7 +42,8 @@ app_include_css = "/assets/vaaman_hr/css/payment_days.css"
 # page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
-# doctype_js = {"doctype" : "public/js/salary_structure_assignment.js"}
+doctype_js = {"Salary Slip": "public/js/salary_slip.js"}
+doctype_list_js = {"Salary Slip": "public/js/salary_slip_list.js"}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -148,7 +149,7 @@ override_doctype_class = {
         "Leave Application": "vaaman_hr.overrides.leave_application.CustomLeaveApplication",
         "Compensatory Leave Request": "vaaman_hr.vaaman_hr.compoff.CompOff",
         "Leave Policy Assignment": "vaaman_hr.overrides.leave_policy_assignment.CustomLeavePolicyAssignment",
-        "Salary Slip": "vaaman_hr.overrides.salary_slip.CustomSalarySlip"
+        "Salary Slip": "vaaman_hr.overrides.salary_slip.CustomSalarySlip",
         } 
 
 
@@ -186,11 +187,6 @@ doc_events = {
     },
     "Payment Request": {
         "on_submit": "vaaman_hr.purchase_invoice.validate_invoice_outstanding"
-    },
-        "Salary Slip": {
-        "before_save": "vaaman_hr.vaaman_hr.salary_slip_hooks.calculate_overtime_hours",
-        "validate":[ "vaaman_hr.vaaman_hr.weekly_off.set_total_weekly_off",
-                    "vaaman_hr.vaaman_hr.weekly_off.before_save"]
     },
     "App Push Notification": {
         "on_submit": "vaaman_hr.api2.send_fcm_notification"

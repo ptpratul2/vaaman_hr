@@ -1,7 +1,8 @@
 import frappe
 
-def calculate_overtime_hours(doc, method):
-    if not doc.start_date or not doc.end_date:
+def set_overtime_hours(doc):
+    """Set total overtime from submitted OT records before salary formulas run."""
+    if not doc.employee or not doc.start_date or not doc.end_date:
         return
 
     # OT from submitted Overtime Import records
@@ -27,4 +28,3 @@ def calculate_overtime_hours(doc, method):
     """, (doc.employee, doc.start_date, doc.end_date))[0][0] or 0
 
     doc.total_overtime_hours = overtime_import_ot + ot_adjustment_ot
-    doc.custom_rounded_gross_pay = round(doc.gross_pay or 0)

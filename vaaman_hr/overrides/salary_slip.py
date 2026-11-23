@@ -75,8 +75,57 @@ class CustomSalarySlip(ERPNextSalarySlip):
             return super().get_working_days_details(lwp, for_preview, lwp_days_corrected)
 
         return super().get_working_days_details(lwp, for_preview)
-    
-    
+
+    def calculate_net_pay(self, skip_tax_breakup_computation: bool = False):
+        """Refresh slip inputs, then evaluate formulas.
+
+        Overtime and weekly off used to be written in validate/before_save hooks,
+        which run after this method. Formulas then saw the previous save's values.
+        Inputs are set here so the first calculation of a slip is already correct.
+        One extra pass runs only when a value produced by the first pass
+        (custom_paid_days or rounded gross) changed, because some earnings read
+        those fields from the snapshot taken at the start of the pass.
+        """
+        if getattr(self.flags, "vaaman_in_net_pay", False):
+            return super().calculate_net_pay(skip_tax_breakup_computation=skip_tax_breakup_computation)
+
+        self.flags.vaaman_in_net_pay = True
+        try:
+            self._prepare_formula_inputs()
+            paid_before = flt(self.custom_paid_days)
+            rounded_before = flt(self.custom_rounded_gross_pay)
+            super().calculate_net_pay(skip_tax_breakup_computation=skip_tax_breakup_computation)
+            rounded = round(self.gross_pay or 0)
+            self.custom_rounded_gross_pay = rounded
+            if flt(self.custom_paid_days) != paid_before or flt(rounded) != rounded_before:
+                super().calculate_net_pay(skip_tax_breakup_computation=skip_tax_breakup_computation)
+                self.custom_rounded_gross_pay = round(self.gross_pay or 0)
+        finally:
+            self.flags.vaaman_in_net_pay = False
+
+    def _prepare_formula_inputs(self):
+        from vaaman_hr.vaaman_hr.salary_slip_hooks import set_overtime_hours
+        from vaaman_hr.vaaman_hr.weekly_off import set_weekly_off_fields
+
+        set_overtime_hours(self)
+        set_weekly_off_fields(self)
+
+    @frappe.whitelist()
+    def recalculate_salary_slip(self):
+        """Rebuild a draft slip from current attendance, overtime and additional salary."""
+        if self.docstatus != 0:
+            frappe.throw(_("Only a draft Salary Slip can be recalculated."))
+        if not self.employee or not self.start_date or not self.end_date:
+            frappe.throw(_("Employee, start date and end date are required."))
+
+        self.set("earnings", [])
+        self.set("deductions", [])
+        self.set("employer_contributions", [])
+        if self.meta.has_field("loans"):
+            self.set("loans", [])
+        self.save()
+        return self.name
+
     def add_additional_salary_components(self, component_type):
         additional_salaries = get_additional_salaries(
             self.employee, self.start_date, self.end_date, component_type
@@ -1037,3 +1086,49 @@ class CustomSalarySlip(ERPNextSalarySlip):
                 pass
         # Final override when no Attendance is available
         self._set_days_zero_if_no_attendance(attendance_rows)
+
+
+@frappe.whitelist()
+def recalculate_salary_slips(names):
+    """Recalculate selected draft Salary Slips from the list view."""
+    if isinstance(names, str):
+        names = frappe.parse_json(names)
+    names = [name for name in (names or []) if name]
+    if not names:
+        frappe.throw(_("Select at least one Salary Slip."))
+
+    frappe.has_permission("Salary Slip", "write", throw=True)
+
+    updated = []
+    skipped = []
+    failed = []
+    total = len(names)
+
+    for index, name in enumerate(names, start=1):
+        frappe.publish_progress(
+            index * 100 / total,
+            title=_("Recalculating Salary Slips"),
+            description=name,
+        )
+        try:
+            doc = frappe.get_doc("Salary Slip", name)
+            if doc.docstatus != 0:
+                skipped.append(name)
+                continue
+            doc.check_permission("write")
+            doc.recalculate_salary_slip()
+            updated.append(name)
+            frappe.db.commit()
+        except Exception:
+            frappe.db.rollback()
+            frappe.log_error(title=f"Salary Slip recalculate failed: {name}")
+            failed.append(name)
+
+    if failed:
+        frappe.msgprint(
+            _("Could not recalculate: {0}").format(", ".join(failed)),
+            title=_("Recalculate"),
+            indicator="red",
+        )
+
+    return {"updated": updated, "skipped": skipped, "failed": failed}
