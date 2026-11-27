@@ -18,14 +18,12 @@ from hrms.hr.utils import (
 )
 
 from frappe.model.document import Document
-from hrms.hr.doctype.attendance.attendance import Attendance as OriginalAttendance
+from hrms.hr.doctype.attendance.attendance import (
+    Attendance as OriginalAttendance,
+    DuplicateAttendanceError,
+    OverlappingShiftAttendanceError,
+)
 from erpnext.controllers.status_updater import validate_status
-
-class DuplicateAttendanceError(frappe.ValidationError):
-    pass
-
-class OverlappingShiftAttendanceError(frappe.ValidationError):
-    pass
 
 class vaaman_hr(OriginalAttendance):
     def validate(self):
@@ -86,6 +84,11 @@ class vaaman_hr(OriginalAttendance):
                 & (Attendance.docstatus < 2)
                 & (Attendance.attendance_date == self.attendance_date)
                 & (Attendance.name != self.name)
+                & (
+                    Attendance.half_day_status.isnull()
+                    | (Attendance.half_day_status == "")
+                    | (Attendance.modify_half_day_status == 0)
+                )
             )
         )
 
