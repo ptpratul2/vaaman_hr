@@ -109,6 +109,23 @@ class CustomSalarySlip(ERPNextSalarySlip):
 
         set_overtime_hours(self)
         set_weekly_off_fields(self)
+        self._set_night_shift_count()
+
+    def _set_night_shift_count(self):
+        """Count submitted Attendance with Night Shift checked in the slip period."""
+        if not self.employee or not self.start_date or not self.end_date:
+            return
+
+        self.custom_night_shift = frappe.db.count(
+            "Attendance",
+            {
+                "employee": self.employee,
+                "attendance_date": ["between", [self.start_date, self.end_date]],
+                "docstatus": 1,
+                "status": ["in", ["Present", "Half Day", "On Leave"]],
+                "custom_night_shift": 1,
+            },
+        )
 
     @frappe.whitelist()
     def recalculate_salary_slip(self):
